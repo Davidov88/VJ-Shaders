@@ -1,5 +1,5 @@
-import { analyzeAudioFile, sampleTrackMap, drawTrackMap } from './audio-analysis.js';
-import { StormRenderer } from './gpu-engine.js?v=2';
+import { analyzeAudioFile, sampleTrackMap, drawTrackMap } from './audio-analysis.js?v=3';
+import { StormRenderer } from './gpu-engine.js?v=3';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('storm-canvas');
@@ -12,6 +12,9 @@ const hideUiBtn = $('hide-ui');
 const showUiBtn = $('show-ui');
 const thunderToggle = $('thunder');
 const autoQualityToggle = $('auto-quality');
+const lightningSens = $('lightning-sens');
+const rainSens = $('rain-sens');
+const vocalSens = $('vocal-sens');
 const analysisBlock = $('analysis-block');
 const analysisStage = $('analysis-stage');
 const analysisPercent = $('analysis-percent');
@@ -19,6 +22,8 @@ const analysisProgress = $('analysis-progress');
 const mapCanvas = $('track-map');
 const timeline = $('timeline');
 const timelineFill = $('timeline-fill');
+const telemetry = $('telemetry');
+const meters = $('meters');
 
 let renderer;
 let trackMap = null;
@@ -37,7 +42,6 @@ let recordingChunks = [];
 let renderStarted = false;
 
 function setStatus(text) { status.textContent = text; }
-
 function formatTime(sec) {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60).toString().padStart(2, '0');
@@ -48,8 +52,9 @@ async function initRenderer() {
   try {
     renderer = new StormRenderer(canvas);
     const info = await renderer.init();
+    applyVisualControls();
     const gpu = [info.vendor, info.architecture].filter(Boolean).join(' / ') || 'WebGPU';
-    setStatus(`WebGPU готов: ${gpu}`);
+    setStatus(`WebGPU готов: ${gpu} · 30 FPS target`);
     renderStarted = true;
     requestAnimationFrame(loop);
   } catch (error) {
@@ -67,14 +72,38 @@ function updateAnalysisProgress(value, stage) {
   analysisProgress.style.width = `${pct}%`;
 }
 
+async function teardownAudioGraph() {
+  try { mediaSource?.disconnect(); } catch {}
+  try { masterGain?.disconnect(); } catch {}
+  try { fxGain?.disconnect(); } catch {}
+  mediaSource = null;
+  masterGain = null;
+  fxGain = null;
+  recordDestination = null;
+  thunderNoise = null;
+  if (audioCtx && audioCtx.state !== 'closed') {
+    try { await audioCtx.close(); } catch {}
+  }
+  audioCtx = null;
+}
+
 async function loadTrack(file) {
   playBtn.disabled = true;
   recordBtn.disabled = true;
   mapCanvas.classList.add('hidden');
+  telemetry.classList.add('hidden');
+  meters.classList.add('hidden');
   trackMap = null;
   eventCursor = 0;
-  if (audio) audio.pause();
+  renderer?.clearLightning();
+  if (audio) {
+    audio.pause();
+    audio.src = '';
+    audio.load();
+  }
+  await teardownAudioGraph();
   if (audioUrl) URL.revokeObjectURL(audioUrl);
+  audioUrl = null;
 
   try {
     setStatus(`Анализ: ${file.name}`);
@@ -95,33 +124,34 @@ async function loadTrack(file) {
     playBtn.disabled = false;
     recordBtn.disabled = false;
     timeline.classList.remove('hidden');
+    telemetry.classList.remove('hidden');
+    meters.classList.remove('hidden');
     analysisBlock.classList.add('hidden');
-    setStatus(`${formatTime(trackMap.duration)} · ${trackMap.events.length} электрических событий · карта готова`);
+    $('bpm').textContent = trackMap.stats.bpm || '-';
+    setStatus(`${formatTime(trackMap.duration)} · ${trackMap.stats.lightningEvents} разрядов · BPM ${trackMap.stats.bpm || '?'} · 6-band map готова`);
   } catch (error) {
     console.error(error);
     setStatus(`Ошибка анализа: ${error.message}`);
+    analysisBlock.classList.add('hidden');
   }
 }
 
 async function setupAudioGraph() {
   if (!audio) return;
-  if (audioCtx && mediaSource) return;
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   audioCtx = new AudioCtx({ latencyHint: 'interactive' });
   mediaSource = audioCtx.createMediaElementSource(audio);
   masterGain = audioCtx.createGain();
   fxGain = audioCtx.createGain();
   recordDestination = audioCtx.createMediaStreamDestination();
-
   masterGain.gain.value = 1;
-  fxGain.gain.value = 0.68;
+  fxGain.gain.value = 0.58;
   mediaSource.connect(masterGain);
   masterGain.connect(audioCtx.destination);
   masterGain.connect(recordDestination);
   fxGain.connect(audioCtx.destination);
   fxGain.connect(recordDestination);
-
-  thunderNoise = createNoiseBuffer(audioCtx, 2.6);
+  thunderNoise = createNoiseBuffer(audioCtx, 2.7);
 }
 
 function createNoiseBuffer(ctx, seconds) {
@@ -130,62 +160,60 @@ function createNoiseBuffer(ctx, seconds) {
   let last = 0;
   for (let i = 0; i < data.length; i++) {
     const white = Math.random() * 2 - 1;
-    last = last * 0.82 + white * 0.18;
+    last = last * 0.86 + white * 0.14;
     data[i] = last;
   }
   return buffer;
 }
 
 function playThunder(power, seed) {
-  if (!audioCtx || !fxGain || !thunderNoise || !thunderToggle.checked || power < 0.46) return;
+  if (!audioCtx || !fxGain || !thunderNoise || !thunderToggle.checked || power < 0.42) return;
   const t = audioCtx.currentTime;
   const src = audioCtx.createBufferSource();
   src.buffer = thunderNoise;
-  src.playbackRate.value = 0.76 + seed * 0.22;
-
+  src.playbackRate.value = 0.72 + seed * 0.20;
   const lowpass = audioCtx.createBiquadFilter();
   lowpass.type = 'lowpass';
-  lowpass.frequency.value = 180 + power * 320;
-  lowpass.Q.value = 0.6 + power * 1.4;
-
+  lowpass.frequency.value = 165 + power * 360;
+  lowpass.Q.value = 0.7 + power * 1.2;
   const gain = audioCtx.createGain();
-  const peak = 0.045 + power * 0.16;
+  const peak = 0.035 + power * 0.14;
   gain.gain.setValueAtTime(0.0001, t);
   gain.gain.exponentialRampToValueAtTime(peak, t + 0.018);
-  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.52 + power * 1.15);
-
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.62 + power * 1.0);
   const sub = audioCtx.createOscillator();
   const subGain = audioCtx.createGain();
   sub.type = 'sine';
-  sub.frequency.setValueAtTime(54 + seed * 15, t);
-  sub.frequency.exponentialRampToValueAtTime(29, t + 0.55);
+  sub.frequency.setValueAtTime(52 + seed * 13, t);
+  sub.frequency.exponentialRampToValueAtTime(27, t + 0.62);
   subGain.gain.setValueAtTime(0.0001, t);
-  subGain.gain.exponentialRampToValueAtTime(0.02 + power * 0.065, t + 0.012);
-  subGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.65 + power * 0.55);
-
+  subGain.gain.exponentialRampToValueAtTime(0.018 + power * 0.055, t + 0.015);
+  subGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.78 + power * 0.45);
   src.connect(lowpass).connect(gain).connect(fxGain);
   sub.connect(subGain).connect(fxGain);
   src.start(t);
-  src.stop(t + 2.5);
+  src.stop(t + 2.55);
   sub.start(t);
   sub.stop(t + 1.4);
 }
 
 function consumeLightningEvents(currentTime) {
-  if (!trackMap || !audio || audio.paused) return;
-  if (currentTime + 0.05 < lastPlaybackTime) {
-    eventCursor = trackMap.events.findIndex((e) => e.time >= currentTime);
+  if (!trackMap || !audio || audio.paused || !renderer) return;
+  if (currentTime + 0.05 < lastPlaybackTime || currentTime - lastPlaybackTime > 1.5) {
+    eventCursor = trackMap.events.findIndex((e) => e.triggerTime >= currentTime - 0.03);
     if (eventCursor < 0) eventCursor = trackMap.events.length;
+    renderer.clearLightning();
   }
 
-  while (eventCursor < trackMap.events.length && trackMap.events[eventCursor].time <= currentTime + 0.018) {
+  while (eventCursor < trackMap.events.length && trackMap.events[eventCursor].triggerTime <= currentTime + 0.020) {
     const event = trackMap.events[eventCursor];
-    if (event.time >= currentTime - 0.16) {
-      renderer.triggerLightning(event);
-      const thunderDelay = 75 + (1 - event.power) * 105;
+    if (event.triggerTime >= currentTime - 0.18) {
+      renderer.triggerLightning(event, currentTime);
+      const untilImpact = Math.max(0, event.time - currentTime);
+      const thunderDelay = untilImpact + 0.055 + (1 - event.power) * 0.085;
       setTimeout(() => {
         if (audio && !audio.paused) playThunder(event.power, event.seed);
-      }, thunderDelay);
+      }, thunderDelay * 1000);
     }
     eventCursor++;
   }
@@ -197,13 +225,14 @@ async function togglePlayback() {
   await audioCtx?.resume();
   if (audio.paused) {
     if (audio.ended) audio.currentTime = 0;
-    eventCursor = trackMap.events.findIndex((e) => e.time >= audio.currentTime);
+    eventCursor = trackMap.events.findIndex((e) => e.triggerTime >= audio.currentTime - 0.02);
     if (eventCursor < 0) eventCursor = trackMap.events.length;
     lastPlaybackTime = audio.currentTime;
     await audio.play();
     playBtn.textContent = 'Pause';
   } else {
     audio.pause();
+    renderer?.clearLightning();
     playBtn.textContent = 'Play';
   }
 }
@@ -224,11 +253,8 @@ async function toggleRecording() {
     return;
   }
   await audioCtx.resume();
-  const canvasStream = canvas.captureStream(60);
-  const combined = new MediaStream([
-    ...canvasStream.getVideoTracks(),
-    ...recordDestination.stream.getAudioTracks(),
-  ]);
+  const canvasStream = canvas.captureStream(30);
+  const combined = new MediaStream([...canvasStream.getVideoTracks(), ...recordDestination.stream.getAudioTracks()]);
   const mimeType = chooseRecorderMime();
   recorder = new MediaRecorder(combined, mimeType ? { mimeType, videoBitsPerSecond: 8_000_000 } : undefined);
   recordingChunks = [];
@@ -238,7 +264,7 @@ async function toggleRecording() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `vj-storm-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
+    a.download = `vj-storm-v3-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 30_000);
     setStatus(`Видео готово: ${(blob.size / 1024 / 1024).toFixed(1)} MB`);
@@ -248,18 +274,41 @@ async function toggleRecording() {
   if (audio.paused) await togglePlayback();
 }
 
+function applyVisualControls() {
+  renderer?.setControls({
+    lightning: Number(lightningSens.value),
+    rain: Number(rainSens.value),
+    vocal: Number(vocalSens.value),
+  });
+}
+
+function updateMeters(sample) {
+  $('energy').textContent = Math.round(sample.energy * 100);
+  $('drums').textContent = Math.round(sample.drums * 100);
+  $('vocal').textContent = Math.round(sample.vocal * 100);
+  const pairs = [
+    ['m-sub', sample.sub], ['m-bass', sample.bass], ['m-lowmid', sample.lowMid],
+    ['m-vocal', sample.vocal], ['m-high', sample.high], ['m-air', sample.air],
+  ];
+  for (const [id, value] of pairs) $(id).style.width = `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
+}
+
 function loop() {
   if (!renderStarted) return;
   const t = audio?.currentTime || 0;
   const sample = trackMap ? sampleTrackMap(trackMap, t) : {
-    energy: 0.04, bass: 0.02, mid: 0.02, high: 0.015, transient: 0,
-    sectionEnergy: 0.05, sectionType: 'calm',
+    energy: 0.015, sub: 0.008, bass: 0.008, lowMid: 0.008, vocal: 0, high: 0.006, air: 0.004,
+    onset: 0, drums: 0, instrumental: 0, mood: 0.48, sectionEnergy: 0.02, sectionType: 'calm',
   };
   consumeLightningEvents(t);
   renderer.render(sample, t);
   if (audio && trackMap) {
     timelineFill.style.width = `${Math.min(100, (audio.currentTime / trackMap.duration) * 100)}%`;
-    if (audio.ended) playBtn.textContent = 'Play';
+    updateMeters(sample);
+    if (audio.ended) {
+      playBtn.textContent = 'Play';
+      renderer.clearLightning();
+    }
   }
   requestAnimationFrame(loop);
 }
@@ -279,10 +328,22 @@ fullscreenBtn.addEventListener('click', async () => {
 hideUiBtn.addEventListener('click', () => document.body.classList.add('ui-hidden'));
 showUiBtn.addEventListener('click', () => document.body.classList.remove('ui-hidden'));
 autoQualityToggle.addEventListener('change', () => renderer?.setAutoQuality(autoQualityToggle.checked));
+for (const input of [lightningSens, rainSens, vocalSens]) input.addEventListener('input', applyVisualControls);
+timeline.addEventListener('pointerdown', (event) => {
+  if (!audio || !trackMap) return;
+  const rect = timeline.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / Math.max(1, rect.width)));
+  audio.currentTime = ratio * trackMap.duration;
+  eventCursor = trackMap.events.findIndex((e) => e.triggerTime >= audio.currentTime - 0.02);
+  if (eventCursor < 0) eventCursor = trackMap.events.length;
+  lastPlaybackTime = audio.currentTime;
+  renderer?.clearLightning();
+});
 window.addEventListener('resize', () => renderer?.resize(true));
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && audio && !audio.paused) {
     audio.pause();
+    renderer?.clearLightning();
     playBtn.textContent = 'Play';
   }
 });

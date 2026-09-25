@@ -2,11 +2,11 @@
   color-scheme: dark;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: #02040a;
-  color: #f3f7ff;
 }
 
 * { box-sizing: border-box; }
 html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #02040a; }
+body { color: #e8edf6; }
 button, input { font: inherit; }
 
 #storm-canvas {
@@ -16,122 +16,80 @@ button, input { font: inherit; }
   height: 100vh;
   display: block;
   background: #02040a;
-  touch-action: none;
 }
 
-.hud { position: fixed; inset: 0; pointer-events: none; }
-
+.hud { position: fixed; inset: 0; pointer-events: none; padding: max(12px, env(safe-area-inset-top)) 12px max(14px, env(safe-area-inset-bottom)); }
 .panel {
   pointer-events: auto;
-  position: absolute;
-  top: max(14px, env(safe-area-inset-top));
-  left: max(14px, env(safe-area-inset-left));
-  width: min(390px, calc(100vw - 28px));
+  width: min(430px, calc(100vw - 24px));
+  max-height: calc(100vh - 28px);
+  overflow: auto;
   padding: 14px;
-  border: 1px solid rgba(255,255,255,.14);
+  border: 1px solid rgba(190, 214, 255, .16);
   border-radius: 16px;
-  background: rgba(3, 7, 18, .58);
-  backdrop-filter: blur(18px) saturate(125%);
-  box-shadow: 0 18px 60px rgba(0,0,0,.35);
+  background: linear-gradient(180deg, rgba(7, 11, 20, .86), rgba(3, 6, 12, .72));
+  box-shadow: 0 18px 65px rgba(0, 0, 0, .38);
+  backdrop-filter: blur(16px);
 }
-
-.topline { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-.brand { font-size: 12px; font-weight: 800; letter-spacing: .18em; opacity: .92; }
-.status { margin-top: 5px; font-size: 12px; line-height: 1.35; color: rgba(237,244,255,.68); }
-
-.icon-btn, .show-ui {
-  border: 1px solid rgba(255,255,255,.14);
-  color: #fff;
-  background: rgba(255,255,255,.06);
+.topline { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.brand { font-size: 15px; font-weight: 800; letter-spacing: .18em; }
+.status { margin-top: 4px; font-size: 12px; line-height: 1.35; color: rgba(224, 234, 249, .68); }
+.icon-btn, button {
+  border: 1px solid rgba(207, 225, 255, .16);
+  color: #f2f5fb;
+  background: rgba(18, 28, 45, .68);
   border-radius: 10px;
+  padding: 10px 12px;
 }
+button:not(:disabled):active { transform: translateY(1px); }
+button:disabled { opacity: .38; }
+.icon-btn { width: 38px; height: 38px; padding: 0; font-size: 24px; line-height: 1; }
 
-.icon-btn { width: 32px; height: 32px; font-size: 20px; line-height: 1; }
-
-.file-button { display: block; margin-top: 13px; }
-.file-button input { display: none; }
-
-.file-button span,
-.controls button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 38px;
-  padding: 0 14px;
-  border: 1px solid rgba(255,255,255,.14);
-  border-radius: 10px;
-  background: rgba(255,255,255,.075);
-  color: #fff;
-  cursor: pointer;
-}
-
-.file-button span { width: 100%; }
-.controls button:disabled { opacity: .32; cursor: default; }
-
-.analysis-block { margin-top: 12px; }
-.progress-row { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; color: rgba(235,243,255,.72); }
-.progress-track { height: 3px; margin-top: 7px; overflow: hidden; border-radius: 100px; background: rgba(255,255,255,.09); }
-.progress-fill { width: 0; height: 100%; background: rgba(235,243,255,.92); transition: width .12s linear; }
-
-.track-map {
-  width: 100%;
-  height: 90px;
-  margin-top: 11px;
+.file-button { display: block; margin-top: 12px; }
+.file-button input { position: absolute; opacity: 0; pointer-events: none; }
+.file-button span {
   display: block;
-  border-radius: 9px;
-  background: rgba(0,0,0,.18);
+  text-align: center;
+  padding: 11px 12px;
+  border-radius: 11px;
+  background: rgba(116, 147, 255, .16);
+  border: 1px solid rgba(166, 188, 255, .25);
 }
 
-.controls {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 7px;
-  margin-top: 10px;
-}
+.analysis-block { margin-top: 10px; }
+.progress-row { display: flex; justify-content: space-between; font-size: 11px; color: rgba(232, 239, 251, .7); }
+.progress-track { height: 4px; margin-top: 6px; border-radius: 999px; overflow: hidden; background: rgba(255,255,255,.08); }
+.progress-fill { width: 0; height: 100%; background: linear-gradient(90deg, #829cff, #e4ebff); }
 
-.controls button { padding: 0 8px; }
+.track-map { display: block; width: 100%; height: 94px; margin-top: 10px; border-radius: 10px; border: 1px solid rgba(190, 214, 255, .12); }
 
-.compact-settings {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 10px;
-  font-size: 11px;
-  color: rgba(235,243,255,.66);
-}
+.telemetry { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
+.telemetry div { padding: 7px 6px; border-radius: 9px; background: rgba(255,255,255,.045); }
+.telemetry span { display: block; font-size: 8px; letter-spacing: .09em; color: rgba(220, 232, 250, .5); }
+.telemetry strong { display: block; margin-top: 2px; font-size: 13px; }
 
+.meters { display: grid; gap: 4px; margin-top: 10px; }
+.meter { display: grid; grid-template-columns: 58px 1fr; gap: 8px; align-items: center; font-size: 9px; color: rgba(227,236,250,.56); }
+.meter i { display: block; height: 4px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.06); }
+.meter b { display: block; width: 0; height: 100%; background: linear-gradient(90deg, rgba(123,151,255,.72), rgba(231,238,255,.95)); transition: width 45ms linear; }
+
+.controls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 11px; }
+.sliders { display: grid; gap: 8px; margin-top: 11px; }
+.sliders label { display: grid; grid-template-columns: 88px 1fr; gap: 8px; align-items: center; font-size: 10px; color: rgba(231,238,250,.64); }
+.sliders input { width: 100%; accent-color: #9caeff; }
+.compact-settings { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 11px; font-size: 10px; color: rgba(231,238,250,.58); }
 .compact-settings label { display: flex; gap: 6px; align-items: center; }
 
-.show-ui {
-  pointer-events: auto;
-  position: absolute;
-  top: max(12px, env(safe-area-inset-top));
-  right: max(12px, env(safe-area-inset-right));
-  width: 42px;
-  height: 34px;
-  font-size: 10px;
-  letter-spacing: .12em;
-  background: rgba(3,7,18,.38);
-  backdrop-filter: blur(10px);
-}
-
-.timeline {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 3px;
-  background: rgba(255,255,255,.08);
-}
-
-#timeline-fill { width: 0; height: 100%; background: rgba(255,255,255,.82); }
+.timeline { pointer-events: auto; position: absolute; left: 12px; right: 12px; bottom: max(9px, env(safe-area-inset-bottom)); height: 6px; overflow: hidden; border-radius: 99px; background: rgba(255,255,255,.08); }
+.timeline-fill { width: 0; height: 100%; background: rgba(214, 225, 255, .88); }
+.show-ui { pointer-events: auto; position: absolute; top: max(12px, env(safe-area-inset-top)); left: 12px; }
 .hidden { display: none !important; }
+.ui-hidden .panel { display: none; }
+.ui-hidden .show-ui { display: block !important; }
 
-body.ui-hidden .panel { display: none; }
-body.ui-hidden .show-ui { display: block !important; }
-body.ui-hidden .timeline { display: block !important; }
-
-@media (max-width: 540px) {
-  .panel { padding: 12px; border-radius: 14px; }
-  .track-map { height: 76px; }
+@media (max-width: 520px) {
+  .panel { padding: 12px; max-height: 74vh; }
+  .track-map { height: 78px; }
+  .telemetry { gap: 4px; }
+  .controls button { padding-inline: 7px; font-size: 12px; }
 }
