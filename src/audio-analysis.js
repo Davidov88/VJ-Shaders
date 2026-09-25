@@ -128,17 +128,17 @@ function buildLightningEvents(frames, fps, bpm) {
   const scores = frames.map((f) => clamp01(
     f.drums * 0.48 + f.onset * 0.25 + f.bass * 0.12 + f.sub * 0.09 + f.energy * 0.06
   ));
-  const adaptive = percentile(scores, 0.78);
+  const adaptive = percentile(scores, 0.87);
   const events = [];
   let lastFrame = -9999;
   const beatSeconds = bpm > 0 ? 60 / bpm : 0.48;
-  const minGap = Math.max(2, Math.round(fps * Math.min(0.14, Math.max(0.075, beatSeconds * 0.19))));
+  const minGap = Math.max(Math.round(fps * 0.24), Math.round(fps * Math.min(0.42, Math.max(0.20, beatSeconds * 0.48))));
 
   for (let i = 2; i < frames.length - 2; i++) {
     const f = frames[i];
     const v = scores[i];
     const localPeak = v >= scores[i - 1] && v >= scores[i + 1] && v >= scores[i - 2] * 0.97;
-    const threshold = Math.max(0.34, adaptive * 0.72) + (f.energy < 0.20 ? 0.13 : 0);
+    const threshold = Math.max(0.44, adaptive * 0.88) + (f.energy < 0.20 ? 0.15 : 0);
     if (!localPeak || v < threshold || f.energy < 0.10 || i - lastFrame < minGap) continue;
 
     const seed = ((i * 48271) % 2147483647) / 2147483647;
