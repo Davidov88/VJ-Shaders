@@ -47,28 +47,178 @@ fn cloudLayer(uv: vec2f, depth: f32, time: f32, wind: f32) -> f32 {
   return fbm(p + warp * 1.25);
 }
 
-fn lightningPath(y: f32, seed: f32, tilt: f32) -> f32 {
-  let n1 = noise2(vec2f(y * 5.5, seed * 91.7));
-  let n2 = noise2(vec2f(y * 18.0 + seed * 3.0, seed * 211.0));
-  let zig = (n1 - 0.5) * 0.20 + (n2 - 0.5) * 0.075;
-  return zig + (y - 0.5) * tilt;
+fn lightningPath(y: f32, seed: f32, tilt: f32, style: f32) -> f32 {
+  var coarseFreq = 4.2;
+  var fineFreq = 17.0;
+  var coarseAmp = 0.17;
+  var fineAmp = 0.060;
+  var curve = 0.0;
+
+  if (style < 0.5) {
+    coarseFreq = 5.4;
+    fineFreq = 19.0;
+    coarseAmp = 0.17;
+    fineAmp = 0.064;
+    curve = sin(y * 7.0 + seed * 11.0) * 0.028;
+  } else if (style < 1.5) {
+    coarseFreq = 3.1;
+    fineFreq = 12.0;
+    coarseAmp = 0.095;
+    fineAmp = 0.038;
+    curve = (y - 0.5) * (y - 0.5) * sign(tilt + 0.0001) * 0.11;
+  } else if (style < 2.5) {
+    coarseFreq = 6.7;
+    fineFreq = 25.0;
+    coarseAmp = 0.22;
+    fineAmp = 0.082;
+    curve = sin(y * 12.0 + seed * 23.0) * 0.045;
+  } else {
+    coarseFreq = 2.5;
+    fineFreq = 10.0;
+    coarseAmp = 0.24;
+    fineAmp = 0.052;
+    curve = sin(y * 4.1 + seed * 19.0) * 0.09;
+  }
+
+  let n1 = noise2(vec2f(y * coarseFreq + seed * 2.7, seed * 91.7));
+  let n2 = noise2(vec2f(y * fineFreq + seed * 7.1, seed * 211.0));
+  let zig = (n1 - 0.5) * coarseAmp + (n2 - 0.5) * fineAmp;
+  return zig + (y - 0.5) * tilt + curve;
 }
 
-fn boltMask(uv: vec2f, baseX: f32, seed: f32, tilt: f32, power: f32) -> vec2f {
-  let path = baseX + lightningPath(uv.y, seed, tilt);
+fn branchMask(
+  uv: vec2f,
+  baseX: f32,
+  originY: f32,
+  branchLength: f32,
+  direction: f32,
+  seed: f32,
+  tilt: f32,
+  style: f32,
+  thickness: f32
+) -> vec2f {
+  let q = clamp((uv.y - originY) / max(branchLength, 0.001), 0.0, 1.0);
+  let gate = step(originY, uv.y) * (1.0 - step(originY + branchLength, uv.y));
+  let anchor = baseX + lightningPath(originY, seed, tilt, style);
+  let wobbleA = noise2(vec2f(q * (11.0 + seed * 7.0), seed * 311.0));
+  let wobbleB = noise2(vec2f(q * 29.0 + seed * 4.0, seed * 571.0));
+  let spread = (0.075 + seed * 0.12) * direction;
+  let bx = anchor + q * spread + (wobbleA - 0.5) * 0.055 + (wobbleB - 0.5) * 0.022;
+  let d = abs(uv.x - bx);
+  let core = exp(-d * thickness) * gate * (1.0 - q * 0.35);
+  let glow = exp(-d * (thickness * 0.085)) * gate * (1.0 - q * 0.46);
+  return vec2f(core, glow);
+}
+
+fn boltMask(
+  uv: vec2f,
+  baseX: f32,
+  seed: f32,
+  tilt: f32,
+  power: f32,
+  style: f32,
+  branchiness: f32,
+  eventAge: f32
+) -> vec3f {
+  let leaderDuration = mix(0.18, 0.075, power);
+  var endY = 0.985;
+  if (style > 2.5) {
+    endY = 0.74 + seed * 0.12;
+  }
+
+  let progress = clamp(eventAge / max(leaderDuration, 0.001), 0.0, 1.0);
+  let frontY = progress * endY;
+  let reveal = 1.0 - smoothstep(frontY - 0.010, frontY + 0.026, uv.y);
+  let terminal = 1.0 - smoothstep(endY - 0.010, endY + 0.018, uv.y);
+
+  let path = baseX + lightningPath(uv.y, seed, tilt, style);
   let d = abs(uv.x - path);
-  let core = exp(-d * mix(520.0, 820.0, power));
-  let glow = exp(-d * mix(34.0, 55.0, power));
+  var coreWidth = mix(520.0, 900.0, power);
+  if (style > 1.5 && style < 2.5) {
+    coreWidth *= 0.82;
+  }
+  if (style > 0.5 && style < 1.5) {
+    coreWidth *= 1.18;
+  }
 
-  var branch = 0.0;
-  let branchGateA = smoothstep(0.22, 0.30, uv.y) * (1.0 - smoothstep(0.56, 0.68, uv.y));
-  let branchXA = path + (uv.y - 0.32) * (0.34 + seed * 0.22) + (noise2(vec2f(uv.y * 21.0, seed * 71.0)) - 0.5) * 0.05;
-  branch += exp(-abs(uv.x - branchXA) * 410.0) * branchGateA;
+  var core = exp(-d * coreWidth) * reveal * terminal;
+  var glow = exp(-d * mix(30.0, 58.0, power)) * reveal * terminal;
 
-  let branchGateB = smoothstep(0.48, 0.57, uv.y) * (1.0 - smoothstep(0.84, 0.93, uv.y));
-  let branchXB = path - (uv.y - 0.56) * (0.22 + seed * 0.25) + (noise2(vec2f(uv.y * 17.0, seed * 131.0)) - 0.5) * 0.05;
-  branch += exp(-abs(uv.x - branchXB) * 460.0) * branchGateB;
-  return vec2f(core + branch * 0.72, glow + branch * 0.25);
+  let r1 = hash21(vec2f(seed * 113.0, 1.7));
+  let r2 = hash21(vec2f(seed * 197.0, 3.1));
+  let r3 = hash21(vec2f(seed * 271.0, 5.9));
+  let r4 = hash21(vec2f(seed * 349.0, 9.4));
+
+  let b1 = branchMask(
+    uv, baseX,
+    0.16 + r1 * 0.20,
+    0.17 + r2 * 0.24,
+    select(-1.0, 1.0, r3 > 0.5),
+    fract(seed * 2.71 + 0.13),
+    tilt, style,
+    mix(360.0, 540.0, power)
+  );
+
+  let b2 = branchMask(
+    uv, baseX,
+    0.38 + r2 * 0.20,
+    0.16 + r3 * 0.28,
+    select(-1.0, 1.0, r4 > 0.5),
+    fract(seed * 4.37 + 0.31),
+    tilt * 0.75, style,
+    mix(330.0, 500.0, power)
+  );
+
+  let b3 = branchMask(
+    uv, baseX,
+    0.58 + r3 * 0.16,
+    0.12 + r4 * 0.24,
+    select(-1.0, 1.0, r1 > 0.5),
+    fract(seed * 7.19 + 0.57),
+    tilt * 0.55, style,
+    mix(300.0, 470.0, power)
+  );
+
+  var branchScale = branchiness;
+  if (style > 0.5 && style < 1.5) {
+    branchScale *= 0.42;
+  }
+  if (style > 1.5 && style < 2.5) {
+    branchScale *= 1.25;
+  }
+
+  core += (b1.x * (0.55 + r2 * 0.40) + b2.x * (0.48 + r3 * 0.42) + b3.x * (0.38 + r4 * 0.42)) * branchScale * reveal;
+  glow += (b1.y + b2.y + b3.y) * branchScale * 0.34 * reveal;
+
+  if (style > 1.5 && style < 2.5) {
+    let splitGate = smoothstep(0.11, 0.18, uv.y) * (1.0 - smoothstep(0.58, 0.72, uv.y));
+    let splitOffset = 0.045 + r2 * 0.065;
+    let splitPath = path + select(-splitOffset, splitOffset, r1 > 0.5);
+    let sd = abs(uv.x - splitPath);
+    core += exp(-sd * 540.0) * splitGate * reveal * 0.62;
+    glow += exp(-sd * 37.0) * splitGate * reveal * 0.24;
+  }
+
+  if (style > 2.5) {
+    let sideFork = branchMask(
+      uv, baseX,
+      0.19 + r4 * 0.12,
+      0.30 + r1 * 0.16,
+      select(-1.0, 1.0, r2 > 0.5),
+      fract(seed * 11.11 + 0.77),
+      tilt * 1.2, style,
+      380.0
+    );
+    core += sideFork.x * branchScale * 0.72 * reveal;
+    glow += sideFork.y * branchScale * 0.29 * reveal;
+  }
+
+  let leaderHead = exp(-abs(uv.y - frontY) * 95.0)
+    * exp(-abs(uv.x - path) * 42.0)
+    * step(eventAge, leaderDuration)
+    * terminal;
+
+  return vec3f(core, glow, leaderHead);
 }
 
 fn rainMask(uv: vec2f, time: f32, amount: f32) -> f32 {
@@ -112,6 +262,8 @@ fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let boltX = u.lightning0.w;
   let tilt = u.lightning1.x;
   let eventAge = u.lightning1.y;
+  let style = u.lightning1.z;
+  let branchiness = u.lightning1.w;
   let cloudDensity = u.environment.x;
   let wind = u.environment.y;
   let exposure = u.environment.z;
@@ -138,16 +290,21 @@ fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   color = mix(color, cloudLight / max(cloudAlpha, 0.18), clamp(cloudAlpha, 0.0, 0.92));
 
   let boltUv = vec2f(p.x / max(aspect, 0.1), (p.y + 1.0) * 0.5);
-  let bolt = boltMask(boltUv, boltX, seed, tilt, boltPower);
+  let bolt = boltMask(boltUv, boltX, seed, tilt, boltPower, style, branchiness, eventAge);
   let lightningColor = u.lightningColor.rgb;
-  let core = bolt.x * flash * (1.5 + boltPower * 2.8);
-  let glow = bolt.y * flash * (0.65 + boltPower * 1.8);
+  let leaderDuration = mix(0.18, 0.075, boltPower);
+  let impactGate = smoothstep(leaderDuration * 0.80, leaderDuration + 0.035, eventAge);
+
+  let core = bolt.x * flash * (1.45 + boltPower * 3.0);
+  let glow = bolt.y * flash * (0.58 + boltPower * 2.0);
+  let leaderHead = bolt.z * (0.85 + boltPower * 2.0);
 
   let cloudPulseNoise = fbm(p * 1.6 + vec2f(seed * 8.0, time * 0.02));
-  let cloudPulse = flash * smoothstep(0.40, 0.82, cloudPulseNoise) * (0.25 + cloudAlpha * 0.95);
-  color += lightningColor * cloudPulse * (0.8 + boltPower * 1.6);
+  let cloudPulse = flash * impactGate * smoothstep(0.40, 0.82, cloudPulseNoise) * (0.25 + cloudAlpha * 0.95);
+  color += lightningColor * cloudPulse * (0.72 + boltPower * 1.8);
   color += lightningColor * glow;
-  color += mix(lightningColor, vec3f(1.0), 0.72) * core;
+  color += mix(lightningColor, vec3f(1.0), 0.76) * core;
+  color += mix(lightningColor, vec3f(1.0), 0.88) * leaderHead;
 
   let ambientElectric = high * sectionEnergy * (0.035 + transient * 0.09);
   color += vec3f(0.20, 0.31, 0.56) * ambientElectric * cloudAlpha;
@@ -155,7 +312,8 @@ fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   let rain = rainMask(vec2f(uv.x + uv.y * 0.12, uv.y), time, rainAmount);
   color += vec3f(0.38, 0.55, 0.75) * rain * (0.12 + energy * 0.26);
 
-  let flashWash = flash * (0.035 + boltPower * 0.18) * exp(-eventAge * 4.5);
+  let impactAge = max(0.0, eventAge - leaderDuration);
+  let flashWash = flash * impactGate * (0.035 + boltPower * 0.18) * exp(-impactAge * 4.5);
   color += lightningColor * flashWash;
 
   let vignette = smoothstep(1.28, 0.25, length(p * vec2f(0.78, 0.92)));
@@ -185,6 +343,14 @@ function hslToRgb(h, s, l) {
   return [hue2rgb(p, q, h + 1 / 3), hue2rgb(p, q, h), hue2rgb(p, q, h - 1 / 3)];
 }
 
+function fract(v) {
+  return v - Math.floor(v);
+}
+
+function seeded(seed, salt) {
+  return fract(Math.sin(seed * 913.71 + salt * 77.13) * 43758.5453123);
+}
+
 export class StormRenderer {
   constructor(canvas) {
     this.canvas = canvas;
@@ -198,7 +364,16 @@ export class StormRenderer {
     this.frameSamples = [];
     this.lastQualityCheck = performance.now();
     this.lastFrameTime = performance.now();
-    this.lightning = { start: -999, power: 0, seed: 0.3, hue: 0.62, x: 0, tilt: 0 };
+    this.lightning = {
+      start: -999,
+      power: 0,
+      seed: 0.3,
+      hue: 0.62,
+      x: 0,
+      tilt: 0,
+      style: 0,
+      branchiness: 0.5,
+    };
   }
 
   async init() {
@@ -213,6 +388,13 @@ export class StormRenderer {
     this.context.configure({ device: this.device, format, alphaMode: 'opaque' });
 
     const module = this.device.createShaderModule({ code: shaderCode });
+    const compilation = await module.getCompilationInfo();
+    const errors = compilation.messages.filter((m) => m.type === 'error');
+    if (errors.length) {
+      console.error('WGSL compilation errors:', errors);
+      throw new Error('Ошибка компиляции WGSL: ' + errors[0].message);
+    }
+
     this.pipeline = this.device.createRenderPipeline({
       layout: 'auto',
       vertex: { module, entryPoint: 'vs' },
@@ -232,7 +414,9 @@ export class StormRenderer {
     return adapter.info || {};
   }
 
-  setAutoQuality(enabled) { this.autoQuality = !!enabled; }
+  setAutoQuality(enabled) {
+    this.autoQuality = !!enabled;
+  }
 
   resize(force = false) {
     const dpr = Math.min(window.devicePixelRatio || 1, 2.75);
@@ -251,27 +435,66 @@ export class StormRenderer {
   }
 
   triggerLightning(event) {
+    const seed = event.seed ?? Math.random();
+    const power = Math.max(0.2, event.power || 0.5);
+    const r1 = seeded(seed, 1);
+    const r2 = seeded(seed, 2);
+    const r3 = seeded(seed, 3);
+    const r4 = seeded(seed, 4);
+    const r5 = seeded(seed, 5);
+
+    let style = 0;
+    if (event.type === 'impact') {
+      style = 2;
+    } else if (event.type === 'fork') {
+      style = r1 > 0.46 ? 0 : 1;
+    } else {
+      style = r2 > 0.52 ? 3 : 0;
+    }
+    if (power > 0.88 && r3 > 0.58) style = 2;
+
+    let tiltRange = 0.42;
+    if (style === 1) tiltRange = 0.22;
+    if (style === 3) tiltRange = 0.82;
+
+    const branchiness = Math.max(
+      0.18,
+      Math.min(1.0, (event.high || 0) * 0.66 + power * 0.46 + r5 * 0.24)
+    );
+
     this.lightning = {
       start: performance.now() * 0.001,
-      power: Math.max(0.2, event.power || 0.5),
-      seed: event.seed ?? Math.random(),
-      hue: event.hue ?? 0.62,
-      x: -0.32 + (event.seed ?? Math.random()) * 0.64,
-      tilt: ((event.seed ?? 0.5) - 0.5) * 0.22,
+      power,
+      seed: fract(seed * 1.913 + r4 * 0.371),
+      hue: fract((event.hue ?? 0.62) + (r3 - 0.5) * 0.10),
+      x: -0.44 + r1 * 0.88,
+      tilt: (r2 - 0.5) * tiltRange,
+      style,
+      branchiness,
     };
   }
 
   render(sample, playbackTime = 0) {
     if (!this.device || !this.pipeline) return;
+
     const nowMs = performance.now();
     const now = nowMs * 0.001;
     const age = Math.max(0, now - this.lightning.start);
+    const leaderDuration = 0.18 + (0.075 - 0.18) * this.lightning.power;
+
     let flash = 0;
-    if (age < 0.58) {
-      const primary = Math.exp(-age * 13.0);
-      const reflash = Math.exp(-Math.pow((age - 0.095) * 45, 2)) * 0.52;
-      const micro = 0.84 + Math.sin(age * 180 + this.lightning.seed * 40) * 0.16;
-      flash = Math.max(0, (primary + reflash) * micro) * (0.55 + this.lightning.power * 0.8);
+    if (age < leaderDuration) {
+      const leadPulse = 0.64 + Math.sin(age * 150 + this.lightning.seed * 31) * 0.12;
+      flash = Math.max(0.42, leadPulse) * (0.72 + this.lightning.power * 0.28);
+    } else {
+      const impactAge = age - leaderDuration;
+      if (impactAge < 0.62) {
+        const primary = Math.exp(-impactAge * 12.5);
+        const reflash1 = Math.exp(-Math.pow((impactAge - 0.082) * 46, 2)) * (0.24 + this.lightning.power * 0.34);
+        const reflash2 = Math.exp(-Math.pow((impactAge - 0.185) * 38, 2)) * (0.10 + this.lightning.branchiness * 0.20);
+        const micro = 0.86 + Math.sin(impactAge * 205 + this.lightning.seed * 47) * 0.14;
+        flash = Math.max(0, (primary + reflash1 + reflash2) * micro) * (0.62 + this.lightning.power * 0.92);
+      }
     }
 
     const sectionType = sample.sectionType || 'steady';
@@ -287,7 +510,7 @@ export class StormRenderer {
     u.set([sample.energy, sample.bass, sample.mid, sample.high], 4);
     u.set([sample.transient, sample.sectionEnergy, rain, 0], 8);
     u.set([flash, this.lightning.power, this.lightning.seed, this.lightning.x], 12);
-    u.set([this.lightning.tilt, age, 0, 0], 16);
+    u.set([this.lightning.tilt, age, this.lightning.style, this.lightning.branchiness], 16);
     u.set([rgb[0], rgb[1], rgb[2], 0], 20);
     u.set([cloudDensity, wind, exposure, this.renderScale], 24);
     this.device.queue.writeBuffer(this.uniformBuffer, 0, u);
@@ -301,6 +524,7 @@ export class StormRenderer {
         storeOp: 'store',
       }],
     });
+
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
     pass.draw(3);
@@ -317,12 +541,15 @@ export class StormRenderer {
   maybeAdjustQuality(nowMs) {
     if (!this.autoQuality || nowMs - this.lastQualityCheck < 2200 || this.frameSamples.length < 30) return;
     this.lastQualityCheck = nowMs;
+
     const sorted = [...this.frameSamples].sort((a, b) => a - b);
     const p75 = sorted[Math.floor(sorted.length * 0.75)];
     let next = this.renderScale;
+
     if (p75 > 20.5) next -= 0.06;
     else if (p75 > 18.1) next -= 0.035;
     else if (p75 < 14.8) next += 0.025;
+
     next = Math.max(0.42, Math.min(0.82, next));
     if (Math.abs(next - this.renderScale) >= 0.02) {
       this.renderScale = next;
