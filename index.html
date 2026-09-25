@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#02040a" />
+  <title>VJ Storm - Audio Reactive WebGPU</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <canvas id="storm-canvas"></canvas>
+
+  <div id="hud" class="hud">
+    <div class="panel" id="panel">
+      <div class="topline">
+        <div>
+          <div class="brand">VJ STORM</div>
+          <div class="status" id="status">Инициализация WebGPU...</div>
+        </div>
+        <button id="hide-ui" class="icon-btn" aria-label="Скрыть интерфейс">×</button>
+      </div>
+
+      <label class="file-button">
+        <input id="audio-file" type="file" accept="audio/*" />
+        <span>Выбрать трек</span>
+      </label>
+
+      <div id="analysis-block" class="analysis-block hidden">
+        <div class="progress-row">
+          <span id="analysis-stage">Анализ...</span>
+          <span id="analysis-percent">0%</span>
+        </div>
+        <div class="progress-track"><div id="analysis-progress" class="progress-fill"></div></div>
+      </div>
+
+      <canvas id="track-map" class="track-map hidden" width="900" height="210"></canvas>
+
+      <div class="controls">
+        <button id="play" disabled>Play</button>
+        <button id="record" disabled>REC</button>
+        <button id="fullscreen">Fullscreen</button>
+      </div>
+
+      <div class="compact-settings">
+        <label><input id="thunder" type="checkbox" checked /> Thunder FX</label>
+        <label><input id="auto-quality" type="checkbox" checked /> Auto quality</label>
+      </div>
+    </div>
+
+    <button id="show-ui" class="show-ui hidden" aria-label="Показать интерфейс">UI</button>
+    <div id="timeline" class="timeline hidden"><div id="timeline-fill"></div></div>
+  </div>
+
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>
