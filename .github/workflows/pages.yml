@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -23,6 +23,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply bundled V3 release
+        shell: bash
+        run: |
+          if [ -f .v3-payload.tgz ]; then
+            tar -xzf .v3-payload.tgz
+            rm .v3-payload.tgz
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add index.html styles.css src/app.js src/gpu-engine.js .v3-payload.tgz
+            if ! git diff --cached --quiet; then
+              git commit -m "feat: publish VJ Storm V3 core"
+              git push origin HEAD:main
+            fi
+          fi
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload static site
