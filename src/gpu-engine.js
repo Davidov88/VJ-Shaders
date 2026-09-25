@@ -417,7 +417,8 @@ export class StormRenderer {
 
   async init() {
     if (!navigator.gpu) throw new Error('WebGPU недоступен. Нужен Chrome Android/Desktop с WebGPU.');
-    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+    const adapterOptions = /Windows/i.test(navigator.userAgent) ? undefined : { powerPreference: 'high-performance' };
+    const adapter = await navigator.gpu.requestAdapter(adapterOptions);
     if (!adapter) throw new Error('WebGPU adapter не найден.');
     this.device = await adapter.requestDevice();
     this.context = this.canvas.getContext('webgpu');
