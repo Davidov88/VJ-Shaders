@@ -64,12 +64,18 @@ fn fbm3(p0: vec2f) -> f32 {
   var p = p0;
   var amp = 0.55;
   var sum = 0.0;
-  for (var i = 0; i < 3; i++) {
+  for (var octave = 0; octave < 3; octave++) {
     sum += noise2(p) * amp;
     p = mat2x2f(1.68, 1.12, -1.12, 1.68) * p + 12.7;
     amp *= 0.48;
   }
   return sum;
+}
+
+fn hsv2rgb(c: vec3f) -> vec3f {
+  let k = vec4f(1.0, 0.6666667, 0.3333333, 3.0);
+  let p = abs(fract(c.xxx + k.xyz) * 6.0 - k.www);
+  return c.z * mix(k.xxx, clamp(p - k.xxx, vec3f(0.0), vec3f(1.0)), c.y);
 }
 
 fn boltA(i: i32) -> vec4f {
@@ -94,124 +100,114 @@ fn boltC(i: i32) -> vec4f {
 fn lightningPath(y: f32, seed: f32, tilt: f32, style: f32) -> f32 {
   var coarseFreq = 5.2;
   var fineFreq = 19.0;
-  var coarseAmp = 0.105;
-  var fineAmp = 0.035;
-  var curve = sin(y * 7.0 + seed * 11.0) * 0.018;
+  var coarseAmp = 0.080;
+  var fineAmp = 0.025;
+  var curve = sin(y * 7.0 + seed * 11.0) * 0.014;
   if (style > 0.5 && style < 1.5) {
-    coarseFreq = 3.2; fineFreq = 12.0; coarseAmp = 0.072; fineAmp = 0.025;
-    curve = (y - 0.45) * (y - 0.45) * sign(tilt + 0.0001) * 0.075;
+    coarseFreq = 3.2; fineFreq = 12.0; coarseAmp = 0.055; fineAmp = 0.020;
+    curve = (y - 0.45) * (y - 0.45) * sign(tilt + 0.0001) * 0.060;
   } else if (style > 1.5 && style < 2.5) {
-    coarseFreq = 6.8; fineFreq = 27.0; coarseAmp = 0.135; fineAmp = 0.048;
-    curve = sin(y * 13.0 + seed * 23.0) * 0.028;
+    coarseFreq = 6.8; fineFreq = 27.0; coarseAmp = 0.105; fineAmp = 0.036;
+    curve = sin(y * 13.0 + seed * 23.0) * 0.023;
   } else if (style > 2.5) {
-    coarseFreq = 2.6; fineFreq = 10.0; coarseAmp = 0.15; fineAmp = 0.038;
-    curve = sin(y * 4.2 + seed * 19.0) * 0.055;
+    coarseFreq = 2.6; fineFreq = 10.0; coarseAmp = 0.115; fineAmp = 0.030;
+    curve = sin(y * 4.2 + seed * 19.0) * 0.040;
   }
   let n1 = noise2(vec2f(y * coarseFreq + seed * 2.7, seed * 91.7));
   let n2 = noise2(vec2f(y * fineFreq + seed * 7.1, seed * 211.0));
   return (n1 - 0.5) * coarseAmp + (n2 - 0.5) * fineAmp + (y - 0.48) * tilt + curve;
 }
 
-fn branchMask(uv: vec2f, baseX: f32, originY: f32, length: f32, direction: f32, seed: f32, tilt: f32, style: f32, frontY: f32, thickness: f32) -> vec2f {
-  let q = clamp((uv.y - originY) / max(length, 0.001), 0.0, 1.0);
+fn branchMask(uv: vec2f, baseX: f32, originY: f32, branchLength: f32, direction: f32, seed: f32, tilt: f32, style: f32, frontY: f32, thickness: f32) -> vec2f {
+  let q = clamp((uv.y - originY) / max(branchLength, 0.001), 0.0, 1.0);
   let branchEnabled = step(originY, frontY);
-  let gate = step(originY, uv.y) * (1.0 - step(originY + length, uv.y)) * branchEnabled;
+  let gate = step(originY, uv.y) * (1.0 - step(originY + branchLength, uv.y)) * branchEnabled;
   let anchor = baseX + lightningPath(originY, seed, tilt, style);
   let w1 = noise2(vec2f(q * (11.0 + seed * 5.0), seed * 311.0));
   let w2 = noise2(vec2f(q * 28.0 + seed * 4.0, seed * 571.0));
-  let spread = (0.055 + seed * 0.090) * direction;
-  let bx = anchor + q * spread + (w1 - 0.5) * 0.044 + (w2 - 0.5) * 0.018;
+  let spread = (0.050 + seed * 0.075) * direction;
+  let bx = anchor + q * spread + (w1 - 0.5) * 0.036 + (w2 - 0.5) * 0.014;
   let d = abs(uv.x - bx);
-  let core = exp(-d * thickness) * gate * (1.0 - q * 0.30);
-  let glow = exp(-d * thickness * 0.075) * gate * (1.0 - q * 0.45);
+  let core = exp(-d * thickness) * gate * (1.0 - q * 0.32);
+  let glow = exp(-d * thickness * 0.068) * gate * (1.0 - q * 0.46);
   return vec2f(core, glow);
 }
 
 fn boltMask(uv: vec2f, a: vec4f, b: vec4f) -> vec3f {
-  let x = a.x;
-  let depth = a.y;
-  let power = a.z;
-  let age = a.w;
-  let seed = b.x;
-  let tilt = b.y;
-  let style = b.z;
-  let branchiness = b.w;
+  let x = a.x; let depth = a.y; let power = a.z; let age = a.w;
+  let seed = b.x; let tilt = b.y; let style = b.z; let branchiness = b.w;
   if (power <= 0.001 || age < 0.0) { return vec3f(0.0); }
-
   let lead = mix(0.065, 0.16, power);
-  var endY = 0.79 + depth * 0.045;
-  if (style > 2.5) { endY = 0.50 + seed * 0.17; }
+  var endY = 0.775 + depth * 0.035;
+  if (style > 2.5) { endY = 0.54 + seed * 0.15; }
   let progress = clamp(age / max(lead, 0.001), 0.0, 1.0);
   let frontY = progress * endY;
-  let reveal = 1.0 - smoothstep(frontY - 0.008, frontY + 0.022, uv.y);
-  let terminal = 1.0 - smoothstep(endY - 0.010, endY + 0.016, uv.y);
-  let baseX = 0.5 + x * (0.43 - depth * 0.06);
-  let path = baseX + lightningPath(uv.y, seed, tilt, style) * (1.0 - depth * 0.18);
+  let reveal = 1.0 - smoothstep(frontY - 0.007, frontY + 0.020, uv.y);
+  let terminal = 1.0 - smoothstep(endY - 0.008, endY + 0.014, uv.y);
+  let baseX = 0.5 + x * (0.40 - depth * 0.05);
+  let path = baseX + lightningPath(uv.y, seed, tilt, style) * (1.0 - depth * 0.20);
   let d = abs(uv.x - path);
-  let depthFade = mix(1.0, 0.56, depth);
-  var core = exp(-d * mix(760.0, 1180.0, power)) * reveal * terminal * depthFade;
-  var glow = exp(-d * mix(24.0, 48.0, power)) * reveal * terminal * mix(1.0, 0.68, depth);
-
+  let depthFade = mix(1.0, 0.58, depth);
+  var core = exp(-d * mix(920.0, 1450.0, power)) * reveal * terminal * depthFade;
+  var glow = exp(-d * mix(34.0, 62.0, power)) * reveal * terminal * mix(1.0, 0.70, depth);
   let r1 = hash21(vec2f(seed * 113.0, 1.7));
   let r2 = hash21(vec2f(seed * 197.0, 3.1));
   let r3 = hash21(vec2f(seed * 271.0, 5.9));
   let r4 = hash21(vec2f(seed * 349.0, 9.4));
-  let b1 = branchMask(uv, baseX, 0.15 + r1 * 0.20, 0.14 + r2 * 0.21, select(-1.0, 1.0, r3 > 0.5), fract(seed * 2.71 + 0.13), tilt, style, frontY, 520.0);
-  let b2 = branchMask(uv, baseX, 0.36 + r2 * 0.18, 0.15 + r3 * 0.24, select(-1.0, 1.0, r4 > 0.5), fract(seed * 4.37 + 0.31), tilt * 0.75, style, frontY, 470.0);
-  let b3 = branchMask(uv, baseX, 0.55 + r3 * 0.15, 0.11 + r4 * 0.20, select(-1.0, 1.0, r1 > 0.5), fract(seed * 7.19 + 0.57), tilt * 0.55, style, frontY, 430.0);
+  let b1 = branchMask(uv, baseX, 0.16 + r1 * 0.18, 0.12 + r2 * 0.18, select(-1.0, 1.0, r3 > 0.5), fract(seed * 2.71 + 0.13), tilt, style, frontY, 650.0);
+  let b2 = branchMask(uv, baseX, 0.37 + r2 * 0.16, 0.13 + r3 * 0.20, select(-1.0, 1.0, r4 > 0.5), fract(seed * 4.37 + 0.31), tilt * 0.75, style, frontY, 590.0);
+  let b3 = branchMask(uv, baseX, 0.55 + r3 * 0.13, 0.10 + r4 * 0.17, select(-1.0, 1.0, r1 > 0.5), fract(seed * 7.19 + 0.57), tilt * 0.55, style, frontY, 540.0);
   var branchScale = branchiness * depthFade;
   if (style > 0.5 && style < 1.5) { branchScale *= 0.46; }
-  if (style > 1.5 && style < 2.5) { branchScale *= 1.20; }
-  core += (b1.x * 0.75 + b2.x * 0.62 + b3.x * 0.52) * branchScale * reveal;
-  glow += (b1.y + b2.y + b3.y) * branchScale * 0.28 * reveal;
-
-  if (style > 1.5 && style < 2.5) {
-    let splitGate = smoothstep(0.12, 0.18, uv.y) * (1.0 - smoothstep(0.54, 0.70, uv.y));
-    let splitOffset = 0.034 + r2 * 0.052;
-    let splitPath = path + select(-splitOffset, splitOffset, r1 > 0.5);
-    let sd = abs(uv.x - splitPath);
-    core += exp(-sd * 620.0) * splitGate * reveal * 0.66;
-    glow += exp(-sd * 34.0) * splitGate * reveal * 0.22;
-  }
-
-  let leaderHead = exp(-abs(uv.y - frontY) * 100.0) * exp(-abs(uv.x - path) * 42.0) * step(age, lead) * terminal;
+  if (style > 1.5 && style < 2.5) { branchScale *= 1.18; }
+  core += (b1.x * 0.66 + b2.x * 0.55 + b3.x * 0.44) * branchScale * reveal;
+  glow += (b1.y + b2.y + b3.y) * branchScale * 0.20 * reveal;
+  let leaderHead = exp(-abs(uv.y - frontY) * 115.0) * exp(-abs(uv.x - path) * 48.0) * step(age, lead) * terminal;
   return vec3f(core, glow, leaderHead);
 }
 
-fn rainLayer(uv: vec2f, time: f32, amount: f32, scale: f32, speed: f32, slant: f32, seedOffset: f32) -> f32 {
-  let cell = floor(uv.x * scale);
-  let rnd = hash21(vec2f(cell + seedOffset, seedOffset * 7.31));
-  let x = (cell + 0.10 + rnd * 0.80) / scale;
-  let headY = fract(rnd * 8.7 + time * speed + seedOffset);
-  let length = mix(0.055, 0.18, rnd) * mix(0.75, 1.28, amount);
-  let rel = headY - uv.y;
-  let tail = step(0.0, rel) * (1.0 - step(length, rel));
-  let driftX = x + (uv.y - headY) * slant;
-  let width = 0.0016 + rnd * 0.0012;
-  let line = 1.0 - smoothstep(width, width * 3.8, abs(uv.x - driftX));
-  let fade = pow(clamp(1.0 - rel / max(length, 0.001), 0.0, 1.0), 0.42);
-  let alive = step(1.0 - amount * 0.78, hash21(vec2f(cell * 1.77, seedOffset * 19.0)));
-  return line * tail * fade * alive;
+fn sdSegment(p: vec2f, a: vec2f, b: vec2f) -> f32 {
+  let pa = p - a;
+  let ba = b - a;
+  let h = clamp(dot(pa, ba) / max(dot(ba, ba), 0.00001), 0.0, 1.0);
+  return length(pa - ba * h);
 }
 
-fn cloudField(p: vec2f, z: f32, time: f32, wind: f32) -> f32 {
-  let drift = vec2f(time * (0.010 + z * 0.010) * wind, time * 0.0025);
-  let base = p * (1.25 + z * 1.15) + drift + vec2f(z * 7.1, z * 3.7);
-  let warp = vec2f(fbm3(base * 0.58 + 3.0), fbm3(base * 0.51 - 5.0)) - 0.5;
-  return fbm3(base + warp * 0.95);
+fn rainLayer(uv: vec2f, time: f32, amount: f32, cells: vec2f, speed: f32, slant: f32, seedOffset: f32, thickness: f32) -> f32 {
+  let scaled = uv * cells;
+  let tile = floor(scaled);
+  let rnd = hash21(tile + vec2f(seedOffset, seedOffset * 1.73));
+  let local = fract(scaled + vec2f(rnd * 0.71, -time * speed + rnd * 5.31));
+  let startP = vec2f(0.18 + rnd * 0.62, 0.08);
+  let endP = startP + vec2f(slant * (0.55 + rnd * 0.45), 0.48 + rnd * 0.34);
+  let dist = sdSegment(local, startP, endP);
+  let line = 1.0 - smoothstep(thickness, thickness * 2.8, dist);
+  let gate = step(1.0 - amount * 0.72, hash21(tile * 1.91 + vec2f(seedOffset * 4.0)));
+  return line * gate * (0.36 + rnd * 0.64);
 }
 
-fn cloudLightningGlow(screen: vec2f, z: f32) -> vec3f {
+fn cloudDensity3d(worldPos: vec3f, time: f32, wind: f32, densityControl: f32) -> f32 {
+  let drift = vec3f(time * 0.025 * wind, 0.0, time * 0.010 * wind);
+  let q = (worldPos + drift) * 0.62;
+  let broad = fbm3(q.xz + vec2f(q.y * 0.31, q.y * 0.13));
+  let detail = fbm3(q.xy * 1.38 + vec2f(q.z * 0.28, time * 0.008));
+  let shape = broad * 0.72 + detail * 0.28;
+  let heightMask = smoothstep(1.05, 1.38, worldPos.y) * (1.0 - smoothstep(3.05, 3.72, worldPos.y));
+  let distanceMask = 1.0 - smoothstep(10.0, 15.0, worldPos.z);
+  return smoothstep(0.47 - densityControl * 0.12, 0.72, shape) * heightMask * distanceMask;
+}
+
+fn volumeLightning(worldPos: vec3f) -> vec3f {
   var glow = vec3f(0.0);
   for (var i = 0; i < 4; i++) {
-    let a = boltA(i);
-    let c = boltC(i);
+    let a = boltA(i); let c = boltC(i);
     if (a.z <= 0.001 || c.w <= 0.001) { continue; }
-    let bx = 0.5 + a.x * 0.42;
-    let depthMatch = exp(-abs(z - a.y) * 5.5);
-    let d = distance(screen * vec2f(1.0, 1.32), vec2f(bx, 0.28 + a.y * 0.13) * vec2f(1.0, 1.32));
-    let g = exp(-d * mix(5.0, 2.7, a.z)) * depthMatch * c.w;
-    glow += c.xyz * g * (0.9 + a.z * 1.7);
+    let boltWorldX = a.x * 3.2;
+    let boltWorldZ = 1.4 + a.y * 6.0;
+    let radial = distance(worldPos.xz, vec2f(boltWorldX, boltWorldZ));
+    let vertical = smoothstep(0.10, 0.55, worldPos.y) * (1.0 - smoothstep(2.85, 3.45, worldPos.y));
+    let scatter = exp(-radial * mix(4.8, 2.2, a.z)) * vertical * c.w;
+    glow += c.xyz * scatter * (0.95 + a.z * 2.8);
   }
   return glow;
 }
@@ -227,100 +223,111 @@ fn fs(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
   let res = max(u.resolutionTime.xy, vec2f(1.0));
   let screen = fragCoord.xy / res;
   let aspect = res.x / res.y;
-  let p = (screen - 0.5) * vec2f(aspect, 1.0);
   let time = u.resolutionTime.z;
-  let energy = u.audio0.x;
-  let sub = u.audio0.y;
-  let bass = u.audio0.z;
-  let lowMid = u.audio0.w;
-  let vocal = u.audio1.x;
-  let high = u.audio1.y;
-  let air = u.audio1.z;
-  let onset = u.audio1.w;
-  let drums = u.audio2.x;
-  let mood = u.audio2.z;
-  let cloudDensity = u.environment.x;
-  let wind = u.environment.y;
-  let rainAmount = u.environment.z;
-  let exposure = u.environment.w;
+  let playbackTime = u.resolutionTime.w;
+  let energy = u.audio0.x; let sub = u.audio0.y; let bass = u.audio0.z; let lowMid = u.audio0.w;
+  let vocal = u.audio1.x; let high = u.audio1.y; let air = u.audio1.z; let onset = u.audio1.w;
+  let drums = u.audio2.x; let instrumental = u.audio2.y; let mood = u.audio2.z; let sectionEnergy = u.audio2.w;
+  let cloudControl = u.environment.x; let wind = u.environment.y; let rainAmount = u.environment.z; let exposure = u.environment.w;
+  let kick = u.frameMeta.z; let snare = u.frameMeta.w;
 
-  let zenith = vec3f(0.004, 0.007, 0.016);
-  let horizon = vec3f(0.018, 0.024, 0.038) + vec3f(0.010, 0.007, 0.018) * mood;
-  var color = mix(zenith, horizon, pow(screen.y, 1.45));
+  let paletteHue = fract(0.54 + mood * 0.58 + vocal * 0.18 + high * 0.11 + playbackTime * 0.0045);
+  let paletteA = hsv2rgb(vec3f(paletteHue, 0.72, 0.78));
+  let paletteB = hsv2rgb(vec3f(fract(paletteHue + 0.19 + high * 0.08), 0.76, 0.70));
+  let paletteDark = hsv2rgb(vec3f(fract(paletteHue + 0.04), 0.58, 0.11));
 
-  let vocalRibbonY = 0.30 + sin(screen.x * 8.0 + time * 0.38) * 0.022 + sin(screen.x * 19.0 - time * 0.22) * 0.008;
-  let vocalRibbon = exp(-abs(screen.y - vocalRibbonY) * 55.0) * vocal * (0.12 + lowMid * 0.10);
-  color += vec3f(0.18 + mood * 0.10, 0.08, 0.28 + mood * 0.16) * vocalRibbon;
+  let shake = vec2f(sin(time * 31.0 + sub * 7.0) * kick * 0.010 + sin(time * 11.0) * snare * 0.004, cos(time * 27.0 + bass * 5.0) * kick * 0.007);
+  let p = vec2f((screen.x - 0.5) * aspect, 0.5 - screen.y) + shake;
+  let fov = 1.04 - kick * 0.17;
 
-  var trans = 1.0;
-  var cloudAccum = vec3f(0.0);
-  for (var step = 0; step < 6; step++) {
-    let z = f32(step) / 5.0;
-    let cp = p * mix(1.05, 1.62, z) + vec2f(0.0, -0.12 + z * 0.05);
-    let n = cloudField(cp, z, time, wind);
-    let topMask = 1.0 - smoothstep(0.56, 0.83, screen.y + z * 0.035);
-    let density = smoothstep(0.38, 0.74, n + cloudDensity * 0.17 + bass * 0.045) * topMask;
-    let alpha = density * mix(0.20, 0.12, z);
-    let internal = cloudLightningGlow(screen, z);
-    let silver = pow(clamp(n, 0.0, 1.0), 4.0) * (0.025 + high * 0.035);
-    let cloudCol = vec3f(0.025, 0.030, 0.042) + silver + internal;
-    cloudAccum += trans * alpha * cloudCol;
-    trans *= (1.0 - alpha);
+  var cameraPos = vec3f(0.0, 0.92 + bass * 0.035, -3.85 + kick * 0.24);
+  cameraPos.x += sin(time * 0.13) * 0.055;
+  let lookPoint = vec3f(sin(time * 0.07) * 0.08, 0.68, 2.35);
+  let forwardDir = normalize(lookPoint - cameraPos);
+  let rightDir = normalize(cross(forwardDir, vec3f(0.0, 1.0, 0.0)));
+  let upDir = normalize(cross(rightDir, forwardDir));
+  let rayDir = normalize(forwardDir * 1.55 + rightDir * p.x * fov + upDir * p.y * fov);
+
+  let skyTop = paletteDark * 0.23 + vec3f(0.002, 0.004, 0.009);
+  let skyHorizon = paletteDark * 0.48 + paletteA * (0.022 + mood * 0.020);
+  let skyBlend = clamp(0.42 - rayDir.y * 0.82, 0.0, 1.0);
+  var color = mix(skyTop, skyHorizon, skyBlend);
+
+  var groundDistance = 1000.0;
+  if (rayDir.y < -0.025) { groundDistance = -cameraPos.y / rayDir.y; }
+  let marchEnd = min(11.0, groundDistance);
+  var cloudTransmit = 1.0;
+  var cloudLight = vec3f(0.0);
+  if (marchEnd > 0.45) {
+    let stepSize = (marchEnd - 0.45) / 10.0;
+    for (var march = 0; march < 10; march++) {
+      let t = 0.45 + (f32(march) + 0.5) * stepSize;
+      let worldPos = cameraPos + rayDir * t;
+      let density = cloudDensity3d(worldPos, time, wind, cloudControl);
+      if (density > 0.005) {
+        let electric = volumeLightning(worldPos);
+        let silver = pow(clamp(density + high * 0.12, 0.0, 1.0), 2.2) * (0.020 + air * 0.035);
+        let cloudBase = vec3f(0.018, 0.021, 0.029) + paletteDark * 0.11 + paletteB * silver;
+        let scatter = cloudBase + electric * (0.72 + density * 0.58);
+        let alpha = 1.0 - exp(-density * stepSize * (0.82 + cloudControl * 0.45));
+        cloudLight += cloudTransmit * alpha * scatter;
+        cloudTransmit *= (1.0 - alpha);
+      }
+    }
   }
-  color = color * trans + cloudAccum;
+  color = color * cloudTransmit + cloudLight;
+
+  if (groundDistance > 0.0 && groundDistance < 100.0) {
+    let world = cameraPos + rayDir * groundDistance;
+    let waveA = noise2(world.xz * vec2f(0.55, 1.75) + vec2f(time * 0.035, -time * 0.070));
+    let waveB = noise2(world.xz * vec2f(2.2, 5.0) + vec2f(-time * 0.045, time * 0.11));
+    let wave = waveA * 0.70 + waveB * 0.30;
+    let horizonFog = exp(-groundDistance * 0.075);
+    var groundColor = vec3f(0.004, 0.008, 0.012) + paletteDark * (0.11 + wave * 0.08);
+    let bassSheen = pow(clamp(1.0 - abs(wave - 0.52) * 3.2, 0.0, 1.0), 3.0) * (0.012 + bass * 0.030);
+    groundColor += paletteA * bassSheen;
+    for (var i = 0; i < 4; i++) {
+      let a = boltA(i); let c = boltC(i);
+      if (a.z <= 0.001 || c.w <= 0.001) { continue; }
+      let boltWorldX = a.x * 3.2;
+      let boltWorldZ = 1.4 + a.y * 6.0;
+      let dx = abs(world.x - boltWorldX);
+      let dz = abs(world.z - boltWorldZ);
+      let reflected = exp(-dx * 2.8) * exp(-dz * 0.33) * c.w * (0.50 + a.z * 0.90);
+      let rippleRadius = max(0.0, a.w - mix(0.065, 0.16, a.z)) * (1.4 + a.z * 0.9);
+      let rippleDistance = distance(world.xz, vec2f(boltWorldX, boltWorldZ));
+      let ripple = exp(-abs(rippleDistance - rippleRadius) * 8.0) * c.w * 0.20;
+      groundColor += c.xyz * (reflected + ripple);
+    }
+    let fogColor = paletteDark * 0.30 + paletteA * 0.020;
+    color = mix(fogColor, groundColor, horizonFog);
+  }
 
   var lightningColor = vec3f(0.0);
-  var totalFlash = 0.0;
+  var flashSum = 0.0;
   for (var i = 0; i < 4; i++) {
-    let a = boltA(i);
-    let b = boltB(i);
-    let c = boltC(i);
+    let a = boltA(i); let b = boltB(i); let c = boltC(i);
     let mask = boltMask(screen, a, b);
-    let boltCol = c.xyz;
-    lightningColor += boltCol * (mask.x * 4.2 + mask.y * 0.60 + mask.z * 1.8) * (0.55 + a.z * 0.95);
-    totalFlash += c.w;
-
-    if (a.z > 0.001 && a.w >= 0.0) {
-      let lead = mix(0.065, 0.16, a.z);
-      let impactAge = max(0.0, a.w - lead);
-      let endX = 0.5 + a.x * (0.43 - a.y * 0.06) + lightningPath(0.79, b.x, b.y, b.z) * (1.0 - a.y * 0.18);
-      let impact = exp(-distance(screen * vec2f(1.0, 1.7), vec2f(endX, 0.795) * vec2f(1.0, 1.7)) * 42.0) * exp(-impactAge * 7.5) * step(lead, a.w);
-      lightningColor += boltCol * impact * a.z * 1.7;
-    }
+    lightningColor += c.xyz * (mask.x * 2.65 + mask.y * 0.34 + mask.z * 1.10) * (0.52 + a.z * 0.78);
+    flashSum += c.w;
   }
   color += lightningColor;
-  color += vec3f(0.08, 0.10, 0.15) * clamp(totalFlash, 0.0, 2.0) * 0.22;
+  color += paletteA * kick * (0.035 + energy * 0.025);
+  color += paletteB * snare * 0.025;
+  color += vec3f(0.70, 0.78, 0.95) * clamp(flashSum, 0.0, 2.5) * 0.025;
 
-  let waterMask = smoothstep(0.765, 0.81, screen.y);
-  if (waterMask > 0.0) {
-    let wave = noise2(vec2f(screen.x * 48.0 + time * 0.10, screen.y * 150.0 - time * 0.55));
-    var water = vec3f(0.008, 0.014, 0.022) + wave * 0.010 + vec3f(0.004, 0.005, 0.010) * energy;
-    for (var i = 0; i < 4; i++) {
-      let a = boltA(i);
-      let b = boltB(i);
-      let c = boltC(i);
-      if (a.z <= 0.001 || a.w < 0.0) { continue; }
-      let lead = mix(0.065, 0.16, a.z);
-      let impactAge = max(0.0, a.w - lead);
-      let endX = 0.5 + a.x * (0.43 - a.y * 0.06) + lightningPath(0.79, b.x, b.y, b.z) * (1.0 - a.y * 0.18);
-      let distortedX = endX + (wave - 0.5) * 0.035 * (screen.y - 0.78) * 4.0;
-      let refl = exp(-abs(screen.x - distortedX) * (25.0 + (1.0 - a.z) * 28.0)) * exp(-(screen.y - 0.78) * 4.8) * c.w;
-      let rippleR = impactAge * (0.10 + a.z * 0.06);
-      let dist = distance(vec2f((screen.x - endX) * 1.6, screen.y - 0.80), vec2f(0.0));
-      let ripple = exp(-abs(dist - rippleR) * 170.0) * exp(-impactAge * 3.0) * step(lead, a.w);
-      water += c.xyz * (refl * 0.72 + ripple * a.z * 0.46);
-    }
-    color = mix(color, water, waterMask);
-  }
+  let vocalFog = exp(-abs(p.y + 0.02) * 3.6) * vocal * (0.035 + lowMid * 0.045);
+  color += paletteB * vocalFog * (0.55 + instrumental * 0.18);
 
   var rain = 0.0;
-  rain += rainLayer(screen, time, rainAmount, 75.0, 1.05 + energy * 0.9, 0.11 + wind * 0.045, 1.3);
-  rain += rainLayer(screen, time, rainAmount, 118.0, 1.48 + drums * 0.8, 0.08 + wind * 0.035, 5.7) * 0.74;
-  rain += rainLayer(screen, time, rainAmount, 166.0, 1.92 + high * 0.65, 0.055 + wind * 0.025, 11.2) * 0.50;
-  color += vec3f(0.16, 0.20, 0.26) * rain * (0.35 + rainAmount * 0.75);
+  rain += rainLayer(screen, time, rainAmount, vec2f(58.0, 15.0), 2.3 + energy * 1.0, 0.10 + wind * 0.028, 1.7, 0.018);
+  rain += rainLayer(screen, time, rainAmount, vec2f(92.0, 20.0), 3.2 + drums * 1.3, 0.075 + wind * 0.020, 5.9, 0.015) * 0.72;
+  rain += rainLayer(screen, time, rainAmount, vec2f(136.0, 26.0), 4.2 + high * 1.5, 0.050 + wind * 0.016, 11.4, 0.013) * 0.48;
+  let rainColor = mix(vec3f(0.28, 0.38, 0.52), paletteA, 0.28 + mood * 0.18);
+  color += rainColor * rain * (0.14 + rainAmount * 0.40 + air * 0.08);
 
-  let atmosphericPulse = onset * 0.018 + sub * 0.012 + air * 0.008;
-  color += vec3f(0.045, 0.055, 0.082) * atmosphericPulse;
+  let drumLight = kick * 0.055 + snare * 0.030 + onset * 0.012;
+  color += paletteA * drumLight * (0.65 + sectionEnergy * 0.35);
   return vec4f(color * exposure, 1.0);
 }
 `;
@@ -355,38 +362,42 @@ fn vs(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4f {
   var p = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
   return vec4f(p[vertexIndex], 0.0, 1.0);
 }
-
 fn aces(x: vec3f) -> vec3f {
-  let a = 2.51;
-  let b = 0.03;
-  let c = 2.43;
-  let d = 0.59;
-  let e = 0.14;
+  let a = 2.51; let b = 0.03; let c = 2.43; let d = 0.59; let e = 0.14;
   return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3f(0.0), vec3f(1.0));
 }
-
 @fragment
 fn fs(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
-  let uv = fragCoord.xy / max(u.resolutionTime.xy, vec2f(1.0));
-  let texel = 1.0 / max(u.resolutionTime.xy, vec2f(1.0));
-  let center = textureSample(sceneTex, samp, uv).rgb;
-  let h1 = textureSample(sceneTex, samp, uv + vec2f(texel.x * 3.0, 0.0)).rgb;
-  let h2 = textureSample(sceneTex, samp, uv - vec2f(texel.x * 3.0, 0.0)).rgb;
-  let h3 = textureSample(sceneTex, samp, uv + vec2f(texel.x * 7.0, 0.0)).rgb;
-  let h4 = textureSample(sceneTex, samp, uv - vec2f(texel.x * 7.0, 0.0)).rgb;
-  let v1 = textureSample(sceneTex, samp, uv + vec2f(0.0, texel.y * 2.0)).rgb;
-  let v2 = textureSample(sceneTex, samp, uv - vec2f(0.0, texel.y * 2.0)).rgb;
-  let blur = center * 0.30 + (h1 + h2) * 0.16 + (h3 + h4) * 0.07 + (v1 + v2) * 0.12;
+  let res = max(u.resolutionTime.xy, vec2f(1.0));
+  let uv = fragCoord.xy / res;
+  let texel = 1.0 / res;
+  let kick = u.frameMeta.z;
+  let snare = u.frameMeta.w;
+  let zoom = 1.0 - kick * 0.018;
+  let sampleUv = (uv - 0.5) * zoom + 0.5;
+  let center = textureSample(sceneTex, samp, sampleUv).rgb;
+  let h1 = textureSample(sceneTex, samp, sampleUv + vec2f(texel.x * 2.5, 0.0)).rgb;
+  let h2 = textureSample(sceneTex, samp, sampleUv - vec2f(texel.x * 2.5, 0.0)).rgb;
+  let h3 = textureSample(sceneTex, samp, sampleUv + vec2f(texel.x * 6.0, 0.0)).rgb;
+  let h4 = textureSample(sceneTex, samp, sampleUv - vec2f(texel.x * 6.0, 0.0)).rgb;
+  let v1 = textureSample(sceneTex, samp, sampleUv + vec2f(0.0, texel.y * 2.0)).rgb;
+  let v2 = textureSample(sceneTex, samp, sampleUv - vec2f(0.0, texel.y * 2.0)).rgb;
+  let blur = center * 0.32 + (h1 + h2) * 0.15 + (h3 + h4) * 0.065 + (v1 + v2) * 0.12;
   let lum = dot(blur, vec3f(0.2126, 0.7152, 0.0722));
-  let bright = max(0.0, lum - 0.44);
-  let bloomGain = 0.55 + u.audio1.w * 0.30 + min(1.0, u.frameMeta.y / 4.0) * 0.20;
+  let bright = max(0.0, lum - 0.38);
+  let bloomGain = 0.46 + u.audio1.w * 0.20 + kick * 0.24 + snare * 0.12 + min(1.0, u.frameMeta.y / 4.0) * 0.12;
   var color = center + blur * bright * bloomGain;
+  let chroma = (kick * 0.75 + snare * 0.25) * texel.x * 1.8;
+  let redSample = textureSample(sceneTex, samp, sampleUv + vec2f(chroma, 0.0)).r;
+  let blueSample = textureSample(sceneTex, samp, sampleUv - vec2f(chroma, 0.0)).b;
+  color.r = mix(color.r, redSample, kick * 0.10);
+  color.b = mix(color.b, blueSample, kick * 0.10);
   color = aces(color);
-  let d = distance(uv, vec2f(0.5));
-  color *= 1.0 - smoothstep(0.40, 0.82, d) * 0.34;
-  let grain = fract(sin(dot(uv * u.resolutionTime.xy + u.resolutionTime.z * 13.0, vec2f(12.9898, 78.233))) * 43758.5453) - 0.5;
-  color += grain * (0.006 + u.audio0.x * 0.003);
-  color = pow(max(color, vec3f(0.0)), vec3f(0.92));
+  let vignetteDistance = distance(uv, vec2f(0.5));
+  color *= 1.0 - smoothstep(0.43, 0.82, vignetteDistance) * 0.26;
+  let grain = fract(sin(dot(uv * res + u.resolutionTime.z * 13.0, vec2f(12.9898, 78.233))) * 43758.5453) - 0.5;
+  color += grain * (0.0045 + u.audio0.x * 0.0025);
+  color = pow(max(color, vec3f(0.0)), vec3f(0.94));
   return vec4f(color, 1.0);
 }
 `;
@@ -405,7 +416,7 @@ export class StormRenderer {
     this.postBindGroup = null;
     this.sceneTexture = null;
     this.sampler = null;
-    this.renderScale = 0.62;
+    this.renderScale = 0.68;
     this.autoQuality = true;
     this.activeBolts = [];
     this.frameSamples = [];
@@ -552,7 +563,8 @@ export class StormRenderer {
     const wind = 0.50 + sample.lowMid * 0.30 + sample.high * 0.25 + sample.air * 0.12;
     const exposure = 1.04 + sample.energy * 0.10;
     const sectionCode = ({ intro: 0, calm: 1, build: 2, drop: 3, climax: 4, release: 5, vocal: 6, steady: 7 })[sectionType] ?? 7;
-    const beatPulse = clamp(sample.onset * 0.72 + sample.drums * 0.28, 0, 1);
+    const kickPulse = clamp((sample.kick || 0) * 1.15 + (sample.onset || 0) * 0.08, 0, 1);
+    const snarePulse = clamp((sample.snare || 0) * 1.05, 0, 1);
 
     const u = new Float32Array(72);
     u.set([this.canvas.width, this.canvas.height, now, playbackTime], 0);
@@ -560,7 +572,7 @@ export class StormRenderer {
     u.set([(sample.vocal || 0) * this.controls.vocal, sample.high || 0, sample.air || 0, sample.onset || 0], 8);
     u.set([sample.drums || 0, sample.instrumental || 0, sample.mood ?? 0.5, sample.sectionEnergy || 0], 12);
     u.set([cloudDensity, wind, rain, exposure], 16);
-    u.set([this.renderScale, bolts.length, beatPulse, sectionCode], 20);
+    u.set([this.renderScale, bolts.length, kickPulse, snarePulse], 20);
 
     for (let i = 0; i < MAX_BOLTS; i++) {
       const bolt = bolts[i];

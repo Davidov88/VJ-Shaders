@@ -146,7 +146,7 @@ function buildLightningEvents(frames, fps, bpm) {
     const leadTime = 0.065 + power * 0.095;
     const time = i / fps;
     const depth = 0.14 + (((i * 69621) % 9973) / 9973) * 0.76;
-    const hue = (0.555 + f.high * 0.055 + f.vocal * 0.095 + f.mood * 0.045 + seed * 0.035) % 1;
+    const hue = (seed * 0.72 + f.mood * 0.31 + f.vocal * 0.23 + f.high * 0.17 + time * 0.009) % 1;
     let type = 'strike';
     if (power > 0.78) type = 'impact';
     else if (f.high > 0.64) type = 'fork';
@@ -164,6 +164,8 @@ function buildLightningEvents(frames, fps, bpm) {
       high: f.high,
       vocal: f.vocal,
       drums: f.drums,
+      kick: f.kick,
+      snare: f.snare,
       type,
     });
     lastFrame = i;
@@ -272,17 +274,21 @@ export async function analyzeAudioFile(file, onProgress = () => {}) {
 
   const frames = new Array(frameCount);
   let prevEnergy = n.energy[0] || 0;
+  let prevSub = n.sub[0] || 0;
   let prevBass = n.bass[0] || 0;
   let prevHigh = n.high[0] || 0;
-  let smoothEnergy = 0, smoothSub = 0, smoothBass = 0, smoothVocal = 0, smoothDrums = 0, smoothMood = 0.5;
+  let smoothEnergy = 0, smoothSub = 0, smoothBass = 0, smoothVocal = 0, smoothDrums = 0, smoothKick = 0, smoothSnare = 0, smoothMood = 0.5;
 
   for (let i = 0; i < frameCount; i++) {
     const energyRise = Math.max(0, n.energy[i] - prevEnergy);
+    const subRise = Math.max(0, n.sub[i] - prevSub);
     const bassRise = Math.max(0, n.bass[i] - prevBass);
     const highRise = Math.max(0, n.high[i] - prevHigh);
     const crest = Math.max(0, n.peak[i] - n.energy[i]);
     const onset = clamp01(energyRise * 3.4 + bassRise * 2.2 + highRise * 1.45 + crest * 0.28);
-    const drumsRaw = clamp01(onset * 0.72 + n.bass[i] * 0.27 + n.sub[i] * 0.16 + highRise * 0.60);
+    const kickRaw = clamp01(subRise * 5.2 + bassRise * 3.0 + onset * 0.34 + n.sub[i] * 0.10);
+    const snareRaw = clamp01(highRise * 3.0 + energyRise * 1.35 + onset * 0.42 + n.lowMid[i] * 0.08 - kickRaw * 0.12);
+    const drumsRaw = clamp01(kickRaw * 0.52 + snareRaw * 0.30 + onset * 0.35 + n.bass[i] * 0.18);
     const vocalRaw = clamp01((n.vocalBand[i] * 0.73 + n.lowMid[i] * 0.27) * (1 - onset * 0.48));
     const brightness = clamp01((n.high[i] * 0.52 + n.air[i] * 0.48) - (n.sub[i] * 0.24));
     const moodRaw = clamp01(0.31 + brightness * 0.46 + vocalRaw * 0.18 + n.energy[i] * 0.08);
@@ -291,7 +297,9 @@ export async function analyzeAudioFile(file, onProgress = () => {}) {
     smoothSub = lerp(smoothSub, n.sub[i], n.sub[i] > smoothSub ? 0.38 : 0.10);
     smoothBass = lerp(smoothBass, n.bass[i], n.bass[i] > smoothBass ? 0.40 : 0.11);
     smoothVocal = lerp(smoothVocal, vocalRaw, vocalRaw > smoothVocal ? 0.30 : 0.08);
-    smoothDrums = lerp(smoothDrums, drumsRaw, drumsRaw > smoothDrums ? 0.62 : 0.16);
+    smoothKick = lerp(smoothKick, kickRaw, kickRaw > smoothKick ? 0.92 : 0.24);
+    smoothSnare = lerp(smoothSnare, snareRaw, snareRaw > smoothSnare ? 0.82 : 0.20);
+    smoothDrums = lerp(smoothDrums, drumsRaw, drumsRaw > smoothDrums ? 0.72 : 0.18);
     smoothMood = lerp(smoothMood, moodRaw, 0.07);
 
     frames[i] = {
@@ -303,12 +311,15 @@ export async function analyzeAudioFile(file, onProgress = () => {}) {
       high: n.high[i],
       air: n.air[i],
       onset,
+      kick: clamp01(smoothKick),
+      snare: clamp01(smoothSnare),
       drums: clamp01(smoothDrums),
       instrumental: clamp01(n.energy[i] * 0.62 + n.bass[i] * 0.15 + n.lowMid[i] * 0.13 + n.high[i] * 0.10 - smoothVocal * 0.08),
       mood: clamp01(smoothMood),
       peak: n.peak[i],
     };
     prevEnergy = n.energy[i];
+    prevSub = n.sub[i];
     prevBass = n.bass[i];
     prevHigh = n.high[i];
   }
@@ -336,7 +347,7 @@ export async function analyzeAudioFile(file, onProgress = () => {}) {
 export function sampleTrackMap(map, time) {
   const empty = {
     energy: 0, sub: 0, bass: 0, lowMid: 0, vocal: 0, high: 0, air: 0,
-    onset: 0, drums: 0, instrumental: 0, mood: 0.5, sectionEnergy: 0, sectionType: 'calm',
+    onset: 0, kick: 0, snare: 0, drums: 0, instrumental: 0, mood: 0.5, sectionEnergy: 0, sectionType: 'calm',
   };
   if (!map || !map.frames.length) return empty;
   const framePos = Math.max(0, Math.min(map.frames.length - 1, time * map.fps));
@@ -348,7 +359,7 @@ export function sampleTrackMap(map, time) {
   const mix = (key) => lerp(a[key], b[key], t);
   return {
     energy: mix('energy'), sub: mix('sub'), bass: mix('bass'), lowMid: mix('lowMid'), vocal: mix('vocal'),
-    high: mix('high'), air: mix('air'), onset: mix('onset'), drums: mix('drums'), instrumental: mix('instrumental'),
+    high: mix('high'), air: mix('air'), onset: mix('onset'), kick: mix('kick'), snare: mix('snare'), drums: mix('drums'), instrumental: mix('instrumental'),
     mood: mix('mood'), sectionEnergy: section?.energy ?? 0, sectionType: section?.type ?? 'steady',
   };
 }

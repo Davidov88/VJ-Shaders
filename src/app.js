@@ -1,5 +1,5 @@
-import { analyzeAudioFile, sampleTrackMap, drawTrackMap } from './audio-analysis.js?v=4';
-import { StormRenderer } from './gpu-engine.js?v=4';
+import { analyzeAudioFile, sampleTrackMap, drawTrackMap } from './audio-analysis.js?v=5';
+import { StormRenderer } from './gpu-engine.js?v=5';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('storm-canvas');
@@ -287,6 +287,7 @@ function applyVisualControls() {
 function updateMeters(sample) {
   $('energy').textContent = Math.round(sample.energy * 100);
   $('drums').textContent = Math.round(sample.drums * 100);
+  $('kick').textContent = Math.round((sample.kick || 0) * 100);
   $('vocal').textContent = Math.round(sample.vocal * 100);
   const pairs = [
     ['m-sub', sample.sub], ['m-bass', sample.bass], ['m-lowmid', sample.lowMid],
@@ -300,7 +301,7 @@ function loop() {
   const t = audio?.currentTime || 0;
   const sample = trackMap ? sampleTrackMap(trackMap, t) : {
     energy: 0.015, sub: 0.008, bass: 0.008, lowMid: 0.008, vocal: 0, high: 0.006, air: 0.004,
-    onset: 0, drums: 0, instrumental: 0, mood: 0.48, sectionEnergy: 0.02, sectionType: 'calm',
+    onset: 0, kick: 0, snare: 0, drums: 0, instrumental: 0, mood: 0.48, sectionEnergy: 0.02, sectionType: 'calm',
   };
   consumeLightningEvents(t);
   renderer.render(sample, t);
