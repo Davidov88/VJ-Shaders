@@ -1,5 +1,5 @@
 import { analyzeAudioFile, sampleTrackMap, drawTrackMap } from './audio-analysis.js';
-import { StormRenderer } from './gpu-engine.js';
+import { StormRenderer } from './gpu-engine.js?v=2';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('storm-canvas');
@@ -182,7 +182,10 @@ function consumeLightningEvents(currentTime) {
     const event = trackMap.events[eventCursor];
     if (event.time >= currentTime - 0.16) {
       renderer.triggerLightning(event);
-      playThunder(event.power, event.seed);
+      const thunderDelay = 75 + (1 - event.power) * 105;
+      setTimeout(() => {
+        if (audio && !audio.paused) playThunder(event.power, event.seed);
+      }, thunderDelay);
     }
     eventCursor++;
   }
