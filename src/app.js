@@ -1,5 +1,5 @@
-import { analyzeAudioFile, sampleTrackMap, drawTrackMap } from './audio-analysis.js?v=3';
-import { StormRenderer } from './gpu-engine.js?v=3';
+import { analyzeAudioFile, sampleTrackMap, drawTrackMap } from './audio-analysis.js?v=4';
+import { StormRenderer } from './gpu-engine.js?v=4';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('storm-canvas');
@@ -58,6 +58,8 @@ async function initRenderer() {
     renderStarted = true;
     requestAnimationFrame(loop);
   } catch (error) {
+    renderStarted = false;
+    renderer = null;
     console.error(error);
     setStatus(`Ошибка: ${error.message}`);
     document.body.classList.remove('ui-hidden');
@@ -339,7 +341,7 @@ timeline.addEventListener('pointerdown', (event) => {
   lastPlaybackTime = audio.currentTime;
   renderer?.clearLightning();
 });
-window.addEventListener('resize', () => renderer?.resize(true));
+window.addEventListener('resize', () => { if (renderStarted) renderer?.resize(true); });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && audio && !audio.paused) {
     audio.pause();

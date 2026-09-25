@@ -26,7 +26,7 @@ struct Uniforms {
   audio1: vec4f,
   audio2: vec4f,
   environment: vec4f,
-  meta: vec4f,
+  frameMeta: vec4f,
   boltA0: vec4f,
   boltA1: vec4f,
   boltA2: vec4f,
@@ -114,8 +114,8 @@ fn lightningPath(y: f32, seed: f32, tilt: f32, style: f32) -> f32 {
 
 fn branchMask(uv: vec2f, baseX: f32, originY: f32, length: f32, direction: f32, seed: f32, tilt: f32, style: f32, frontY: f32, thickness: f32) -> vec2f {
   let q = clamp((uv.y - originY) / max(length, 0.001), 0.0, 1.0);
-  let active = step(originY, frontY);
-  let gate = step(originY, uv.y) * (1.0 - step(originY + length, uv.y)) * active;
+  let branchEnabled = step(originY, frontY);
+  let gate = step(originY, uv.y) * (1.0 - step(originY + length, uv.y)) * branchEnabled;
   let anchor = baseX + lightningPath(originY, seed, tilt, style);
   let w1 = noise2(vec2f(q * (11.0 + seed * 5.0), seed * 311.0));
   let w2 = noise2(vec2f(q * 28.0 + seed * 4.0, seed * 571.0));
@@ -332,7 +332,7 @@ struct Uniforms {
   audio1: vec4f,
   audio2: vec4f,
   environment: vec4f,
-  meta: vec4f,
+  frameMeta: vec4f,
   boltA0: vec4f,
   boltA1: vec4f,
   boltA2: vec4f,
@@ -379,7 +379,7 @@ fn fs(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
   let blur = center * 0.30 + (h1 + h2) * 0.16 + (h3 + h4) * 0.07 + (v1 + v2) * 0.12;
   let lum = dot(blur, vec3f(0.2126, 0.7152, 0.0722));
   let bright = max(0.0, lum - 0.44);
-  let bloomGain = 0.55 + u.audio1.w * 0.30 + min(1.0, u.meta.y / 4.0) * 0.20;
+  let bloomGain = 0.55 + u.audio1.w * 0.30 + min(1.0, u.frameMeta.y / 4.0) * 0.20;
   var color = center + blur * bright * bloomGain;
   color = aces(color);
   let d = distance(uv, vec2f(0.5));
@@ -469,7 +469,7 @@ export class StormRenderer {
   clearLightning() { this.activeBolts.length = 0; }
 
   resize(force = false) {
-    if (!this.device) return;
+    if (!this.device || !this.postPipeline || !this.uniformBuffer || !this.sampler) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
     const maxWidth = 1280;
     let width = Math.max(2, Math.round(innerWidth * dpr * this.renderScale));
