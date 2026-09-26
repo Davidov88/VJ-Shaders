@@ -1,0 +1,6 @@
+import{test}from'node:test';import assert from'node:assert/strict';
+import{generateBolt,boltState,LightningPool}from'../src/graphics/lightning.js';
+const event=(seed,time=1)=>({seed,time,startTime:time-.24,leaderDuration:.24,power:.8,type:'impact',zone:.5,hue:.6,branchCount:10,restrikeCount:3,afterglow:.4});
+test('topology is reproducible but different seeds produce different paths',()=>{assert.deepEqual(generateBolt(event(12)),generateBolt(event(12)));assert.notDeepEqual(generateBolt(event(12)).segments,generateBolt(event(13)).segments);});
+test('main downward strike grows, branches, flashes on onset and restrikes',()=>{const e=event(12),bolt=generateBolt(e),main=bolt.segments.filter(s=>!s.branch);assert.ok(main.every(s=>s.b[1]<s.a[1]));assert.ok(bolt.segments.length>main.length);assert.ok(boltState(e,.8).progress<boltState(e,.9).progress);assert.equal(boltState(e,1).progress,1);assert.ok(boltState(e,1).brightness>boltState(e,.99).brightness*5);assert.ok(boltState(e,1.105).brightness>boltState(e,1.095).brightness);});
+test('event pool keeps simultaneous strikes and reconstructs after seeking',()=>{const p=new LightningPool();p.setMap({events:[event(1),event(2,1.12),event(3,4)]});assert.equal(p.update(1.15).length,2);assert.equal(p.update(5.2).length,0);assert.equal(p.update(1.15).length,2);assert.equal(p.update(4.01).length,1);});

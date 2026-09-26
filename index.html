@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#02040a" />
+  <link rel="icon" href="data:," />
   <title>VJ Storm - Audio Reactive WebGPU</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -14,7 +15,7 @@
     <div class="panel" id="panel">
       <div class="topline">
         <div>
-          <div class="brand">VJ STORM</div>
+          <div class="brand">VJ STORM <span class="version">03 / VOLUME ENGINE</span></div>
           <div class="status" id="status">Инициализация WebGPU...</div>
         </div>
         <button id="hide-ui" class="icon-btn" aria-label="Скрыть интерфейс">×</button>
@@ -34,6 +35,9 @@
       </div>
 
       <canvas id="track-map" class="track-map hidden" width="900" height="210"></canvas>
+      <div id="track-info" class="small"></div>
+      <div class="readout"><span id="section-label">Сначала выберите трек</span><span id="timecode">0:00</span></div>
+      <div class="meters"><span>Бас<i><b id="meter-bass"></b></i></span><span>Атаки<i><b id="meter-transient"></b></i></span><span>Голос ≈<i><b id="meter-vocal"></b></i></span></div>
 
       <div class="controls">
         <button id="play" disabled>Play</button>
@@ -42,15 +46,23 @@
       </div>
 
       <div class="compact-settings">
-        <label><input id="thunder" type="checkbox" checked /> Thunder FX</label>
+        <label><input id="thunder" type="checkbox" /> Thunder FX</label>
         <label><input id="auto-quality" type="checkbox" checked /> Auto quality</label>
       </div>
+      <details class="settings"><summary>Звук и эффекты</summary>
+        <label>Bloom <input id="bloom" type="range" min="0" max="1.8" step=".05" value=".85" /></label>
+        <label>Экспозиция <input id="exposure" type="range" min=".5" max="2" step=".05" value="1.05" /></label>
+        <label class="stem-label">Вокальная дорожка (необязательно)<input id="stem-file" type="file" accept="audio/*" disabled /></label>
+        <p id="stem-status" class="small">Гармоническая оценка ≈ голос</p>
+        <p class="small">Без отдельной дорожки голос оценивается приблизительно: сюда могут попадать мелодические инструменты. Вокальный файл должен начинаться в той же точке, что и основной трек.</p>
+        <div id="metrics" class="small"></div>
+      </details>
     </div>
 
     <button id="show-ui" class="show-ui hidden" aria-label="Показать интерфейс">UI</button>
-    <div id="timeline" class="timeline hidden"><div id="timeline-fill"></div></div>
+    <div id="timeline" class="timeline hidden"><input id="seek" type="range" min="0" max="1" step=".01" value="0" aria-label="Позиция трека" /></div>
   </div>
 
-  <script type="module" src="./src/app.js?v=2"></script>
+  <script type="module" src="./src/main.js?v=3"></script>
 </body>
 </html>

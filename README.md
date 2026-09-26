@@ -1,54 +1,22 @@
-# VJ-Shaders / VJ Storm
+# VJ Storm v3
 
-Мобильная аудиореактивная грозовая VJ-сцена для Chrome Android на WebGPU.
+Audio-reactive WebGPU storm. Load a local track, wait for analysis, press Play. Runs entirely in the browser; audio is not uploaded.
 
-## Что уже реализовано
+## Run
 
-- предварительный анализ всего трека до запуска визуализации;
-- карта энергии, bass / mid / high, transient и секций композиции;
-- заранее рассчитанные события молний;
-- WebGPU/WGSL полноэкранный renderer без тяжелого 3D-фреймворка;
-- многослойные процедурные тучи с параллаксом и динамической плотностью;
-- разные по мощности и рисунку молнии с цветом, зависящим от спектральной карты;
-- вспышки внутри облаков, glow и вторичные ветви;
-- аудиореактивный дождь;
-- опциональный синтетический Thunder FX;
-- скрываемый минимальный UI;
-- автоматическое динамическое разрешение под FPS;
-- запись canvas + аудио в WebM через MediaRecorder, если браузер поддерживает API.
+Node.js: `npm start`, then http://127.0.0.1:8765. Or serve this directory over HTTPS. Chrome with WebGPU is required. There is no WebGL fallback.
 
-## Запуск
+## Engine
 
-WebGPU требует secure context. Используйте HTTPS или localhost.
+- FFT analysis in a worker, six frequency bands, adaptive onset detection, estimated tempo, composition sections.
+- A pool of deterministic 3D branching discharges: stepped leaders, onset-aligned strokes, restrikes, afterglow, six presets.
+- Raymarched cloud volume with 3D cellular noise, shadowing, local lightning illumination and channel occlusion.
+- 4096 persistent GPU rain particles, downward motion, wind, perspective depth.
+- HDR render targets, separable bloom, exposure and tone mapping; extensible WGSL post-effect chain.
+- 30 FPS target with GPU timing when supported and adaptive resolution.
+- Minimal hideable UI, seeking, repeated track loading, optional thunder and WebM recording.
+- Separate harmonic/vocal visual bus. Default is a harmonic proxy, NOT stem separation. A time-aligned vocal stem can be loaded for accurate vocal energy.
 
-Для локального запуска достаточно статического HTTP-сервера:
+## Validation and extension
 
-```bash
-python -m http.server 8080
-```
-
-После этого откройте `http://localhost:8080` в Chrome.
-
-## GitHub Pages
-
-Workflow `.github/workflows/pages.yml` публикует содержимое репозитория как статический сайт. В настройках GitHub Pages выберите источник `GitHub Actions`.
-
-## Архитектура
-
-- `src/audio-analysis.js` - O(N) предварительный анализ PCM: bass / mid / high, transients, секции и lightning events.
-- `src/gpu-engine.js` - raw WebGPU renderer и WGSL shader: sky, layered volumetric-style clouds, procedural lightning, internal cloud flashes, rain, tone mapping, dynamic render scale.
-- `src/app.js` - playback, event scheduler, минимальный UI, synthetic thunder, запись видео.
-
-## Почему raw WebGPU
-
-Первая версия использует чистый WebGPU/WGSL, чтобы на мобильном Chrome контролировать стоимость каждого пикселя и не зависеть от экспериментальных изменений WebGPURenderer/TSL.
-
-## Следующие этапы
-
-1. Multi-pass bloom / anamorphic glow.
-2. Half-resolution cloud buffer + temporal accumulation.
-3. GPU particle rain.
-4. Water pass с отражением молний и ripple impacts.
-5. Более точная onset/beat карта и BPM estimation.
-6. Presets.
-7. Расширенные настройки записи.
+`npm test` runs signal and event regression tests. See [docs/ENGINE.md](docs/ENGINE.md) for the audio contract, shader extension example, performance limits and v2 audit findings. Chrome desktop and a mobile viewport were exercised; real Adreno performance and the user's own track still need device testing.
